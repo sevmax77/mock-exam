@@ -174,10 +174,6 @@ function formatExplanationBlock(block) {
   return normalized;
 }
 
-function isOptionLine(line) {
-  return /^([A-Z])\.\s*(.*)$/.test(line);
-}
-
 function isAnswerLine(line) {
   const answerText = line.replace(/^Answer:\s*/i, '').trim();
   return (
