@@ -1,13 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeQuestion } from '../test/fixtures';
 import {
+  DEFAULT_AI_GUIDANCE,
   DEFAULT_AI_MODEL,
+  DEFAULT_AI_SETTINGS,
+  DEFAULT_EXAM_NAME,
   askOpenRouter,
   buildAiPrompt,
+  buildSystemPrompt,
+  normalizeAiSettings,
   parseAiJson,
   stripCodeFence,
   toPositionalQuestion,
 } from './ai';
+
+describe('AI settings', () => {
+  it('fills in the exam name and guidance for settings saved by older versions', () => {
+    expect(normalizeAiSettings({ apiKey: 'k', model: 'm' })).toEqual({
+      apiKey: 'k',
+      model: 'm',
+      examName: DEFAULT_EXAM_NAME,
+      guidance: DEFAULT_AI_GUIDANCE,
+    });
+    expect(normalizeAiSettings(null)).toEqual(DEFAULT_AI_SETTINGS);
+    expect(normalizeAiSettings({ model: 5 } as never).model).toBe(DEFAULT_AI_MODEL);
+  });
+
+  it('keeps a deliberately blank exam name and guidance', () => {
+    const settings = normalizeAiSettings({ examName: '', guidance: '' });
+    expect(settings.examName).toBe('');
+    expect(buildSystemPrompt(settings)).toBe(
+      'You are an expert reviewer of practice questions for a professional certification exam. ' +
+        'Be precise, skeptical, and exam-focused. Return only valid JSON.',
+    );
+  });
+
+  it('uses the exam name and guidance in the prompts', () => {
+    const settings = { examName: 'CKA', guidance: 'Prefer kubectl.' };
+    expect(buildSystemPrompt(settings)).toContain('questions for CKA. Be precise');
+    expect(buildSystemPrompt(settings)).toContain('Prefer kubectl.');
+    expect(buildAiPrompt(makeQuestion('q1'), 'CKA')).toMatch(/^Review this .* question for CKA\./);
+  });
+});
 
 describe('stripCodeFence', () => {
   it('unwraps fenced JSON', () => {
@@ -105,7 +139,7 @@ describe('buildAiPrompt', () => {
 
 describe('askOpenRouter', () => {
   const question = makeQuestion('q1', ['A'], ['one', 'two']);
-  const settings = { apiKey: 'key', model: '  ' };
+  const settings = { ...DEFAULT_AI_SETTINGS, apiKey: 'key', model: '  ', examName: 'CKA' };
 
   function mockFetch(content: string | undefined, init: { ok?: boolean; status?: number } = {}) {
     const fetchMock = vi.fn(async () => ({
@@ -128,7 +162,10 @@ describe('askOpenRouter', () => {
 
     expect(review.recommendedOptionIds).toEqual(['B']);
     const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request.body)).model).toBe(DEFAULT_AI_MODEL);
+    const body = JSON.parse(String(request.body));
+    expect(body.model).toBe(DEFAULT_AI_MODEL);
+    expect(body.messages[0].content).toContain('practice questions for CKA');
+    expect(body.messages[1].content).toContain('question for CKA.');
     expect((request.headers as Record<string, string>).Authorization).toBe('Bearer key');
   });
 

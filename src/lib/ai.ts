@@ -4,15 +4,55 @@ import { displayLabel } from './format';
 export const DEFAULT_AI_MODEL = 'openai/gpt-4o-mini';
 export const AI_REQUEST_TIMEOUT_MS = 90_000;
 
+export const DEFAULT_EXAM_NAME = 'AWS Certified Generative AI Developer - Professional (AIP-C01)';
+export const DEFAULT_AI_GUIDANCE =
+  'Prefer AWS managed-service best practices, least operational overhead, and exact scenario ' +
+  'requirements. Do not invent unsupported AWS features.';
+
 export type AiSettings = {
   apiKey: string;
   model: string;
+  /** The exam the questions are written for, used in the prompts. */
+  examName: string;
+  /** Extra instructions for the reviewer, such as which practices to prefer. */
+  guidance: string;
 };
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   apiKey: '',
   model: DEFAULT_AI_MODEL,
+  examName: DEFAULT_EXAM_NAME,
+  guidance: DEFAULT_AI_GUIDANCE,
 };
+
+/** Fills in defaults for settings saved by older versions, which had only a key and a model. */
+export function normalizeAiSettings(stored: Partial<AiSettings> | null): AiSettings {
+  const value = stored && typeof stored === 'object' ? stored : {};
+  const text = (field: unknown, fallback: string) => (typeof field === 'string' ? field : fallback);
+
+  return {
+    apiKey: text(value.apiKey, DEFAULT_AI_SETTINGS.apiKey),
+    model: text(value.model, DEFAULT_AI_SETTINGS.model),
+    examName: text(value.examName, DEFAULT_AI_SETTINGS.examName),
+    guidance: text(value.guidance, DEFAULT_AI_SETTINGS.guidance),
+  };
+}
+
+/** The exam name for prompts and labels; a generic one when the setting is blank. */
+export function examLabel(settings: Pick<AiSettings, 'examName'>): string {
+  return settings.examName.trim() || 'a professional certification exam';
+}
+
+export function buildSystemPrompt(settings: Pick<AiSettings, 'examName' | 'guidance'>): string {
+  return [
+    `You are an expert reviewer of practice questions for ${examLabel(settings)}.`,
+    'Be precise, skeptical, and exam-focused.',
+    settings.guidance.trim(),
+    'Return only valid JSON.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
 
 export type AiReview = {
   /** Option texts the review was made for; applying is refused if they changed since. */
@@ -95,7 +135,7 @@ export function parseAiJson(content: string, optionIds: string[]): AiReviewResul
   };
 }
 
-export function buildAiPrompt(question: Question): string {
+export function buildAiPrompt(question: Question, examName: string = DEFAULT_EXAM_NAME): string {
   const options = question.options
     .map((option) => `${option.id}. ${option.text}`)
     .join('\n');
@@ -103,7 +143,7 @@ export function buildAiPrompt(question: Question): string {
     .map((option) => `${option.id}: ${option.explanation || '(empty)'}`)
     .join('\n');
 
-  return `Review this AWS Certified Generative AI Developer - Professional AIP-C01 style multiple-choice question.
+  return `Review this multiple-choice practice question for ${examLabel({ examName })}.
 
 Task:
 1. Determine the best correct answer option ID or IDs.
@@ -182,12 +222,11 @@ export async function askOpenRouter(
       messages: [
         {
           role: 'system',
-          content:
-            'You are an expert AWS certification reviewer for AWS Certified Generative AI Developer - Professional AIP-C01. Be precise, skeptical, and exam-focused. Prefer AWS managed-service best practices, least operational overhead, and exact scenario requirements. Do not invent unsupported AWS features. Return only valid JSON.',
+          content: buildSystemPrompt(settings),
         },
         {
           role: 'user',
-          content: buildAiPrompt(question),
+          content: buildAiPrompt(question, settings.examName),
         },
       ],
       temperature: 0.1,

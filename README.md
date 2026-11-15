@@ -172,5 +172,6 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 - Flag questions in exam or practice mode, then practice just the flagged ones.
 - Per-question stats in the question bank (times answered, % correct), a "Weakest first" sort, and a Focus practice session with your weakest and not-yet-answered questions.
 - Keyboard shortcuts on desktop: `1`–`9` choose an option, `←`/`→` move, `F` flags, `Enter` submits or goes to the next question.
+- Ask AI (OpenRouter) reviews a question's answer and writes per-option explanations. Set the exam name and optional reviewer guidance in Settings so it works for any exam. The question bank can also fill all missing or placeholder explanations in one go; it only writes where the AI agrees with your answer key, never changes answers, and lists the questions where it disagreed.
 - Current session and the last 50 attempts are saved locally in `localStorage`. Export a history backup to move it to another device, and import it there; imported attempts are merged with the ones already saved.
 - Long questions and options are formatted for comfortable reading on mobile, with a dark theme that follows the device setting.
