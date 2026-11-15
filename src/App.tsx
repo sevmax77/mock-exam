@@ -10,6 +10,8 @@ import { ReviewView } from './components/ReviewView';
 import { SettingsView } from './components/SettingsView';
 import { useAskAi } from './hooks/useAskAi';
 import { useBatchAskAi } from './hooks/useBatchAskAi';
+import { useScreenHistory } from './hooks/useScreenHistory';
+import type { Screen } from './lib/routing';
 import { useCountdown } from './hooks/useCountdown';
 import { useOfflineStatus } from './hooks/useOfflineStatus';
 import { usePersistentState } from './hooks/usePersistentState';
@@ -68,15 +70,6 @@ import {
   removeStoredKey,
 } from './lib/storage';
 
-type Screen =
-  | 'home'
-  | 'session'
-  | 'review'
-  | 'results'
-  | 'bank'
-  | 'question-form'
-  | 'settings';
-
 function App() {
   const [storageError, setStorageError] = useState(false);
   const reportStorageError = () => setStorageError(true);
@@ -111,15 +104,20 @@ function App() {
   const questionById = useMemo(() => buildQuestionMap(questionBank), [questionBank]);
   const [session, dispatchSession] = useSession(questionById, reportStorageError);
 
-  const [requestedScreen, setScreen] = useState<Screen>(() => (session ? 'session' : 'home'));
-  // Never leave the user on an empty session screen (for example after the last question of the
-  // session was deleted from the bank).
-  const screen =
-    (requestedScreen === 'session' || requestedScreen === 'review') && !session
-      ? 'home'
-      : requestedScreen;
-  const [settingsReturnScreen, setSettingsReturnScreen] = useState<Screen>('home');
   const [latestAttempt, setLatestAttempt] = useState<Attempt | null>(null);
+  const { screen, navigate, goBack } = useScreenHistory(
+    () => (session ? 'session' : 'home'),
+    // Never show an empty screen: a session screen without a session (for example after its last
+    // question was deleted, or when going "forward" to a finished session), or results after a
+    // reload, when the attempt is no longer in memory.
+    (requested) =>
+      ((requested === 'session' || requested === 'review') && !session) ||
+      (requested === 'results' && !latestAttempt)
+        ? 'home'
+        : requested,
+  );
+  /** Where Settings goes back to when it was opened directly (for example after a reload). */
+  const [settingsReturnScreen, setSettingsReturnScreen] = useState<Screen>('home');
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(createEmptyQuestionForm);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [formWarnings, setFormWarnings] = useState<string[]>([]);
@@ -155,7 +153,7 @@ function App() {
 
   const openSettings = (returnTo: Screen) => {
     setSettingsReturnScreen(returnTo);
-    setScreen('settings');
+    navigate('settings');
   };
 
   /**
@@ -182,7 +180,9 @@ function App() {
       : examSettings;
     dispatchSession({ type: 'start', session: createSession(mode, questions, settings) });
     setLatestAttempt(null);
-    setScreen('session');
+    // From results, replace that entry: its attempt is cleared, so going back to it would only
+    // show home.
+    navigate('session', { replace: screen === 'results' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -218,18 +218,24 @@ function App() {
 
     // A timed exam can run out while the user is editing questions or settings; don't pull
     // them away from that. The attempt is still saved to history.
+    // Results take the place of the finished session in the browser history.
     if (!timedOut || ['home', 'session', 'review', 'results'].includes(screen)) {
-      setScreen('results');
+      navigate('results', { replace: true });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
+
+  // Review is part of the session: both share one history entry, so the browser's back button
+  // leaves the session from either.
+  const openReview = () => navigate('review', { replace: true });
+  const closeReview = () => navigate('session', { replace: true });
 
   const remainingMs = useCountdown(session?.deadline, () => endSession({ timedOut: true }));
 
   const goToQuestion = (index: number) => {
     // QuestionView scrolls itself to the top whenever the shown question changes.
     dispatchSession({ type: 'goTo', index });
-    setScreen('session');
+    closeReview();
   };
 
   const clearHistory = () => {
@@ -272,7 +278,7 @@ function App() {
     if (window.confirm('Discard the current session?')) {
       dispatchSession({ type: 'clear' });
       setLatestAttempt(null);
-      setScreen('home');
+      goBack('home');
     }
   };
 
@@ -299,13 +305,13 @@ function App() {
     setQuestionForm(form);
     setFormErrors([]);
     setFormWarnings([]);
-    setScreen('question-form');
+    navigate('question-form');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const closeQuestionForm = () => {
     ai.cancel();
-    setScreen('bank');
+    goBack('bank');
   };
 
   const saveQuestion = (form: QuestionFormState) => {
@@ -507,12 +513,12 @@ function App() {
             mistakeCount={mistakeIds.length}
             flaggedCount={flaggedIds.length}
             focusCount={focusIds.length}
-            onContinue={() => setScreen('session')}
+            onContinue={() => navigate('session')}
             onStart={(mode) => startSession(mode)}
             onPracticeMistakes={() => startSession('practice', mistakeIds)}
             onPracticeFlagged={() => startSession('practice', flaggedIds)}
             onPracticeFocus={() => startSession('practice', focusIds)}
-            onOpenBank={() => setScreen('bank')}
+            onOpenBank={() => navigate('bank')}
             onOpenSettings={() => openSettings('home')}
             onClearHistory={clearHistory}
             onExportHistory={exportHistory}
@@ -541,11 +547,11 @@ function App() {
           onNext={() => dispatchSession({ type: 'move', direction: 1 })}
           onPrevious={() => dispatchSession({ type: 'move', direction: -1 })}
           onToggleFlag={() => dispatchSession({ type: 'toggleFlag', questionId: currentQuestion.id })}
-          onReview={() => setScreen('review')}
+          onReview={openReview}
           onSubmitPractice={() => dispatchSession({ type: 'submit', questionId: currentQuestion.id })}
           onFinishPractice={() => endSession()}
           onDiscard={resetCurrentSession}
-          onMenu={() => setScreen('home')}
+          onMenu={() => goBack('home')}
         />
       )}
 
@@ -556,7 +562,7 @@ function App() {
           answeredCount={answeredCount}
           remainingMs={remainingMs}
           onGoToQuestion={goToQuestion}
-          onBack={() => setScreen('session')}
+          onBack={closeReview}
           onSubmit={() => endSession()}
         />
       )}
@@ -567,7 +573,7 @@ function App() {
           questionById={questionById}
           retryCount={getWrongQuestionIds(latestAttempt, questionById).length}
           flaggedCount={getFlaggedResultIds(latestAttempt, questionById).length}
-          onHome={() => setScreen('home')}
+          onHome={() => goBack('home')}
           onNewExam={() => startSession('exam')}
           onNewPractice={() => startSession('practice')}
           onRetryWrong={() =>
@@ -590,7 +596,7 @@ function App() {
           onCancelBatch={batchAi.cancel}
           onDismissBatch={batchAi.dismiss}
           defaultCount={BUNDLED_BANK.questions.length}
-          onBack={() => setScreen('home')}
+          onBack={() => goBack('home')}
           onAdd={() => openQuestionForm(createEmptyQuestionForm())}
           onEdit={(question) => openQuestionForm(questionToForm(question))}
           onDuplicate={duplicateQuestion}
@@ -626,7 +632,7 @@ function App() {
           aiSettings={aiSettings}
           onExamSettingsChange={setExamSettings}
           onAiSettingsChange={setAiSettings}
-          onBack={() => setScreen(settingsReturnScreen)}
+          onBack={() => goBack(settingsReturnScreen)}
         />
       )}
     </main>
