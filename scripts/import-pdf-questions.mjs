@@ -86,7 +86,9 @@ async function loadStripPatterns(file) {
       try {
         return new RegExp(source, 'i');
       } catch (error) {
-        throw new Error(`Invalid pattern in ${file}: ${source} (${error.message})`);
+        throw new Error(`Invalid pattern in ${file}: ${source} (${error.message})`, {
+          cause: error,
+        });
       }
     });
 }
