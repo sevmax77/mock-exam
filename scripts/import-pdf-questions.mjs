@@ -16,12 +16,25 @@ const defaultPdfPath = path.join(
 // `explanation` per question), so writing over the curated bank would lose per-option
 // explanations. Review the output, run `npm run migrate:explanations -- <file>`, then merge.
 const defaultOutputPath = path.join(projectRoot, 'src', 'data', 'questions.imported.json');
+// Publisher-specific noise (watermarks, site links) is listed in a local file that is not
+// committed (`*.local` is git-ignored): one case-insensitive regular expression per line.
+const defaultStripPatternsPath = path.join(
+  projectRoot,
+  'src',
+  'data',
+  'import-strip-patterns.local',
+);
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
 const force = args.has('--force');
 const pdfPath = getArgValue('--pdf') ?? defaultPdfPath;
 const outputPath = getArgValue('--out') ?? defaultOutputPath;
+const stripPatternsPath = getArgValue('--strip-patterns') ?? defaultStripPatternsPath;
+
+// Page markers such as "-- 12 of 340 --" are always removed.
+const PAGE_MARKER_LINE = /^--\s*\d+\s+of\s+\d+\s*--$/i;
+const PAGE_MARKER = /--\s*\d+\s+of\s+\d+\s*--/i;
 
 function getArgValue(name) {
   const index = process.argv.indexOf(name);
@@ -52,17 +65,43 @@ function splitEmbeddedQuestionStart(line) {
   return [line.slice(0, splitIndex).trim(), line.slice(splitIndex).trim()].filter(Boolean);
 }
 
-function cleanExtractedLines(text) {
+/**
+ * Reads the extra line patterns to strip. Blank lines and lines starting with # are ignored.
+ * A missing file means no extra patterns.
+ */
+async function loadStripPatterns(file) {
+  if (!existsSync(file)) {
+    console.log(
+      `No strip patterns file at ${path.relative(projectRoot, file)}; only page markers are removed.`,
+    );
+    return [];
+  }
+
+  const text = await readFile(file, 'utf8');
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .map((source) => {
+      try {
+        return new RegExp(source, 'i');
+      } catch (error) {
+        throw new Error(`Invalid pattern in ${file}: ${source} (${error.message})`, {
+          cause: error,
+        });
+      }
+    });
+}
+
+function cleanExtractedLines(text, stripPatterns) {
   return text
     .replace(/\r/g, '')
     .split('\n')
     .map(normalizeLine)
     .flatMap(splitEmbeddedQuestionStart)
-    .filter((line) => !/^--\s*\d+\s+of\s+\d+\s*--$/i.test(line))
-    .filter((line) => !/PUBLISHER/i.test(line))
+    .filter((line) => !PAGE_MARKER_LINE.test(line))
     .filter((line) => !/^Link:\s*/i.test(line))
-    .filter((line) => !/^https?:\/\/www\.PUBLISHER\.com$/i.test(line))
-    .filter((line) => !/^https?:\/\/www\.PUBLISHER\.com$/i.test(line));
+    .filter((line) => !stripPatterns.some((pattern) => pattern.test(line)));
 }
 
 function joinInline(lines) {
@@ -374,7 +413,7 @@ function parseQuestions(lines) {
   return questions;
 }
 
-function validateQuestions(questions, expectedQuestionCount) {
+function validateQuestions(questions, expectedQuestionCount, stripPatterns) {
   const errors = [];
 
   if (expectedQuestionCount && questions.length !== expectedQuestionCount) {
@@ -414,7 +453,8 @@ function validateQuestions(questions, expectedQuestionCount) {
       );
     }
 
-    if (/PUBLISHER|--\s*\d+\s+of\s+\d+\s*--/i.test(JSON.stringify(question))) {
+    const serialized = JSON.stringify(question);
+    if (PAGE_MARKER.test(serialized) || stripPatterns.some((pattern) => pattern.test(serialized))) {
       errors.push(
         `${question.id}: still contains PDF footer/header noise. Question starts: ${question.question.slice(
           0,
@@ -443,11 +483,12 @@ async function extractPdfText(sourcePath) {
 
 async function main() {
   const text = await extractPdfText(pdfPath);
-  const lines = cleanExtractedLines(text);
+  const stripPatterns = await loadStripPatterns(stripPatternsPath);
+  const lines = cleanExtractedLines(text, stripPatterns);
   const expectedQuestionCount = getExpectedQuestionCount(lines);
   const questions = parseQuestions(lines);
 
-  validateQuestions(questions, expectedQuestionCount);
+  validateQuestions(questions, expectedQuestionCount, stripPatterns);
 
   const json = `${JSON.stringify(questions, null, 2)}\n`;
 

@@ -155,7 +155,7 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 
 | Command | What it does |
 |---------|--------------|
-| `npm run import:pdf` | Extracts questions from the PDF in `src/data/` into `src/data/questions.imported.json` (legacy format). Never overwrites an existing file unless you pass `-- --force`. |
+| `npm run import:pdf` | Extracts questions from the PDF in `src/data/` into `src/data/questions.imported.json` (legacy format). Never overwrites an existing file unless you pass `-- --force`. Page markers are always removed; list any other lines to drop (such as a publisher's watermark) as regular expressions, one per line, in `src/data/import-strip-patterns.local`, which is not committed, or pass `-- --strip-patterns <file>`. |
 | `npm run migrate:explanations -- <input.json>` | Converts legacy questions to per-option explanations, writing `<input>.migrated.json`. |
 | `npm run generate:icons` | Regenerates the PNG app icons in `public/` from `public/favicon.svg`. |
 | `npm test` | Runs the unit tests and the `questions.json` checks with Vitest. |
