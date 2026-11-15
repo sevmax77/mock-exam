@@ -1023,6 +1023,41 @@ code {
   max-width: 280px;
 }
 
+.batch-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.batch-panel h3,
+.batch-panel h4,
+.batch-panel p {
+  margin: 0;
+}
+
+.batch-list {
+  display: grid;
+  gap: 8px;
+}
+
+.batch-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.batch-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow-wrap: anywhere;
+  color: var(--text-muted-strong);
+  line-height: 1.5;
+}
+
 .history-actions {
   display: flex;
   flex-wrap: wrap;

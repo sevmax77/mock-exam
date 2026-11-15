@@ -1,4 +1,10 @@
-import { DEFAULT_AI_MODEL, type AiSettings } from '../lib/ai';
+import {
+  DEFAULT_AI_GUIDANCE,
+  DEFAULT_AI_MODEL,
+  DEFAULT_EXAM_NAME,
+  examLabel,
+  type AiSettings,
+} from '../lib/ai';
 import type { ExamSettings } from '../lib/session';
 
 function toWholeNumber(value: string): number {
@@ -146,12 +152,59 @@ export function SettingsView({
             />
           </label>
 
+          <label className="form-field">
+            <span>Exam name</span>
+            <input
+              type="text"
+              value={aiSettings.examName}
+              onChange={(event) =>
+                onAiSettingsChange({ ...aiSettings, examName: event.target.value })
+              }
+              placeholder={DEFAULT_EXAM_NAME}
+            />
+            <small className="field-hint">
+              The exam your questions are written for. Ask AI reviews them as items of this exam.
+            </small>
+          </label>
+
+          <label className="form-field">
+            <span>Reviewer guidance (optional)</span>
+            <textarea
+              rows={3}
+              value={aiSettings.guidance}
+              onChange={(event) =>
+                onAiSettingsChange({ ...aiSettings, guidance: event.target.value })
+              }
+              placeholder="For example: prefer managed services and the least operational overhead."
+            />
+            <small className="field-hint">
+              Extra instructions sent with every review, such as which practices the exam favors.
+            </small>
+          </label>
+
+          {(aiSettings.examName !== DEFAULT_EXAM_NAME ||
+            aiSettings.guidance !== DEFAULT_AI_GUIDANCE) && (
+            <button
+              className="ghost-button"
+              onClick={() =>
+                onAiSettingsChange({
+                  ...aiSettings,
+                  examName: DEFAULT_EXAM_NAME,
+                  guidance: DEFAULT_AI_GUIDANCE,
+                })
+              }
+            >
+              Restore default exam and guidance
+            </button>
+          )}
+
           <div className="ai-panel">
             <p>
-              Ask AI reviews each question as an AWS Certified Generative AI Developer -
-              Professional AIP-C01 exam item. It returns recommended correct option IDs,
-              confidence, notes, per-option explanations, and an optional summary. The result is
-              only applied after you preview and choose an action.
+              Ask AI reviews each question as an item of {examLabel(aiSettings)}. It returns
+              recommended correct option IDs, confidence, notes, per-option explanations, and an
+              optional summary. In the question editor the result is only applied after you
+              preview it and choose an action. The question bank can also fill missing
+              explanations for many questions at once, without changing any answers.
             </p>
             <p>
               Your API key is stored only in this browser using localStorage. Do not use this

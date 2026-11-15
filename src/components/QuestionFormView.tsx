@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { DEFAULT_AI_MODEL, type AiReview, type AiSettings, type AiStatus } from '../lib/ai';
+import {
+  DEFAULT_AI_MODEL,
+  examLabel,
+  type AiReview,
+  type AiSettings,
+  type AiStatus,
+} from '../lib/ai';
 import { displayLabel } from '../lib/format';
 import { getQuestionWarnings } from '../lib/questionBank';
 import { formToQuestion, type ApplyAiReviewMode, type QuestionFormState } from '../lib/questionForm';
@@ -210,8 +216,8 @@ export function QuestionFormView({
             <div>
               <h3>Ask AI</h3>
               <p>
-                Send this question to OpenRouter for an AWS AIP-C01 focused answer review with
-                per-option explanations.
+                Send this question to OpenRouter for an answer review with per-option
+                explanations, as an item of {examLabel(aiSettings)}.
               </p>
             </div>
             <button className="secondary-button" onClick={onOpenAiSettings}>

@@ -9,11 +9,13 @@ import { ResultsView } from './components/ResultsView';
 import { ReviewView } from './components/ReviewView';
 import { SettingsView } from './components/SettingsView';
 import { useAskAi } from './hooks/useAskAi';
+import { useBatchAskAi } from './hooks/useBatchAskAi';
 import { useCountdown } from './hooks/useCountdown';
 import { useOfflineStatus } from './hooks/useOfflineStatus';
 import { usePersistentState } from './hooks/usePersistentState';
 import { useSession } from './hooks/useSession';
-import { DEFAULT_AI_SETTINGS, type AiSettings } from './lib/ai';
+import { DEFAULT_AI_MODEL, normalizeAiSettings, type AiReview, type AiSettings } from './lib/ai';
+import { fillExplanationsFromReview, needsExplanations } from './lib/batchAi';
 import { BUNDLED_BANK } from './lib/bundledBank';
 import { downloadJson } from './lib/download';
 import {
@@ -90,7 +92,7 @@ function App() {
   );
   const [aiSettings, setAiSettings] = usePersistentState<AiSettings>(
     AI_SETTINGS_KEY,
-    () => ({ ...DEFAULT_AI_SETTINGS, ...loadJson<Partial<AiSettings>>(AI_SETTINGS_KEY, {}) }),
+    () => normalizeAiSettings(loadJson<Partial<AiSettings> | null>(AI_SETTINGS_KEY, null)),
     { onSaveError: reportStorageError },
   );
   const [examSettings, setExamSettings] = usePersistentState<ExamSettings>(
@@ -122,6 +124,7 @@ function App() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [formWarnings, setFormWarnings] = useState<string[]>([]);
   const ai = useAskAi();
+  const batchAi = useBatchAskAi();
   const offline = useOfflineStatus();
 
   const currentQuestionId = session?.questionOrder[session.currentIndex];
@@ -403,6 +406,48 @@ function App() {
     void ai.ask(candidateQuestion, aiSettings, snapshotOptions(questionForm.optionTexts));
   };
 
+  const pendingExplanationQuestions = useMemo(
+    () => questionBank.filter(needsExplanations),
+    [questionBank],
+  );
+
+  /** Applied to the latest bank, so edits made while the batch runs are kept. */
+  const applyBatchReview = (questionId: string, review: AiReview) => {
+    setStoredBank((current) => {
+      const question = current.questions.find((item) => item.id === questionId);
+      const filled = question && fillExplanationsFromReview(question, review);
+
+      return filled
+        ? {
+            ...current,
+            modified: true,
+            questions: current.questions.map((item) => (item.id === questionId ? filled : item)),
+          }
+        : current;
+    });
+  };
+
+  const startBatchAskAi = () => {
+    if (!aiSettings.apiKey.trim()) {
+      window.alert('Add your OpenRouter API key in Settings first.');
+      openSettings('bank');
+      return;
+    }
+
+    const count = pendingExplanationQuestions.length;
+    if (
+      !window.confirm(
+        `Send ${count} ${count === 1 ? 'question' : 'questions'} to OpenRouter ` +
+          `(${aiSettings.model.trim() || DEFAULT_AI_MODEL}), one at a time? Each request uses ` +
+          'your API key. Explanations are filled in only where the AI agrees with your answer key.',
+      )
+    ) {
+      return;
+    }
+
+    void batchAi.start(pendingExplanationQuestions, aiSettings, applyBatchReview);
+  };
+
   const applyAiReview = (mode: ApplyAiReviewMode) => {
     if (!ai.review) {
       return;
@@ -537,7 +582,13 @@ function App() {
       {screen === 'bank' && (
         <QuestionBankView
           questions={questionBank}
+          questionById={questionById}
           stats={questionStats}
+          pendingExplanationCount={pendingExplanationQuestions.length}
+          batch={batchAi.state}
+          onStartBatch={startBatchAskAi}
+          onCancelBatch={batchAi.cancel}
+          onDismissBatch={batchAi.dismiss}
           defaultCount={BUNDLED_BANK.questions.length}
           onBack={() => setScreen('home')}
           onAdd={() => openQuestionForm(createEmptyQuestionForm())}

@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import type { Question } from '../types';
 import { sortByWeakness, type QuestionStats } from '../lib/stats';
+import type { BatchState } from '../hooks/useBatchAskAi';
+import { BatchAskAiPanel } from './BatchAskAiPanel';
 
 type QuestionBankViewProps = {
   questions: Question[];
+  questionById: Map<string, Question>;
   stats: Map<string, QuestionStats>;
+  /** Questions with empty or placeholder explanations. */
+  pendingExplanationCount: number;
+  batch: BatchState | null;
+  onStartBatch: () => void;
+  onCancelBatch: () => void;
+  onDismissBatch: () => void;
   defaultCount: number;
   onBack: () => void;
   onAdd: () => void;
@@ -28,7 +37,13 @@ function describeStats(stat: QuestionStats | undefined): string {
 
 export function QuestionBankView({
   questions,
+  questionById,
   stats,
+  pendingExplanationCount,
+  batch,
+  onStartBatch,
+  onCancelBatch,
+  onDismissBatch,
   defaultCount,
   onBack,
   onAdd,
@@ -132,6 +147,16 @@ export function QuestionBankView({
           </button>
         </div>
       </div>
+
+      <BatchAskAiPanel
+        pendingCount={pendingExplanationCount}
+        batch={batch}
+        questionById={questionById}
+        onStart={onStartBatch}
+        onCancel={onCancelBatch}
+        onDismiss={onDismissBatch}
+        onEdit={onEdit}
+      />
 
       <div className="bank-list">
         {filteredQuestions.map((question, index) => (
