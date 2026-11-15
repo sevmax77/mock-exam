@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import questionsJson from './data/questions.json';
 import type { Attempt, Question, QuestionOption, SavedExamState, SessionMode } from './types';
 
-const defaultQuestions = questionsJson as Question[];
 const SESSION_KEY = 'mock-exam.current-session';
 const ATTEMPTS_KEY = 'mock-exam.attempts';
-const QUESTION_BANK_KEY = 'mock-exam.question-bank.formatted-v2';
+const QUESTION_BANK_KEY = 'mock-exam.question-bank.v3';
+const LEGACY_QUESTION_BANK_KEY = 'mock-exam.question-bank.formatted-v2';
 const EXAM_SETTINGS_KEY = 'mock-exam.exam-settings';
 const AI_SETTINGS_KEY = 'mock-exam.ai-settings';
 const DEFAULT_AI_MODEL = 'openai/gpt-4o-mini';
+const AI_REQUEST_TIMEOUT_MS = 90_000;
+const PLACEHOLDER_CORRECT_EXPLANATION =
+  'Correct answer for this question. See the summary for additional context.';
+const PLACEHOLDER_INCORRECT_EXPLANATION = 'Not the best choice for this scenario.';
+const MAX_SAVED_ATTEMPTS = 20;
 
 const DEFAULT_EXAM_SETTINGS = {
   shuffleQuestions: true,
@@ -31,6 +36,8 @@ type Screen =
 
 type QuestionFormState = {
   id?: string;
+  /** Canonical option ids, by form position. `null` for options added in this edit. */
+  optionIds: Array<string | null>;
   question: string;
   optionTexts: string[];
   optionExplanations: string[];
@@ -43,7 +50,21 @@ type AiSettings = {
   model: string;
 };
 
+/**
+ * The question bank as stored on this device.
+ * - `modified: false` means "use the bundled questions.json as-is"; `questions` is not stored then.
+ * - `bundledHash` is the hash of the bundled questions.json the local copy was based on. When it
+ *   differs from the current bundle, a newer questions.json shipped with the app.
+ */
+type StoredQuestionBank = {
+  bundledHash: string | null;
+  modified: boolean;
+  questions: Question[];
+};
+
 type AiReview = {
+  /** Option texts the review was made for; applying is refused if they changed since. */
+  optionsSnapshot: string;
   recommendedOptionIds: string[];
   confidence: 'low' | 'medium' | 'high';
   optionExplanations: Record<string, string>;
@@ -67,10 +88,16 @@ function isStandaloneApp(): boolean {
 }
 
 function shuffle<T>(items: T[]): T[] {
-  return [...items]
-    .map((item) => ({ item, sort: Math.random() }))
-    .sort((a, b) => a.sort - b.sort)
-    .map(({ item }) => item);
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}...` : text;
 }
 
 function orderItems<T>(items: T[], shuffled: boolean): T[] {
@@ -125,12 +152,87 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-function parseAiJson(content: string, optionIds: string[]): AiReview {
-  const cleaned = content
-    .trim()
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
+/** Returns false when the browser refused the write (quota full, private mode, ...). */
+function saveJson(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error(`Could not save ${key} to localStorage:`, error);
+    return false;
+  }
+}
+
+function removeStoredKey(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Storage unavailable; nothing to remove.
+  }
+}
+
+/** FNV-1a 32-bit. Only used to detect that the bundled questions.json changed. */
+function hashString(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function loadQuestionBank(): StoredQuestionBank {
+  const bundled: StoredQuestionBank = {
+    bundledHash: BUNDLED_HASH,
+    modified: false,
+    questions: bundledQuestions,
+  };
+  const stored = loadJson<Partial<StoredQuestionBank> | null>(QUESTION_BANK_KEY, null);
+
+  if (stored && typeof stored === 'object') {
+    if (!stored.modified || !Array.isArray(stored.questions)) {
+      return bundled;
+    }
+
+    return {
+      bundledHash: typeof stored.bundledHash === 'string' ? stored.bundledHash : null,
+      modified: true,
+      questions: normalizeQuestionBank(stored.questions),
+    };
+  }
+
+  // Migrate the pre-v3 format, which stored a full copy of the bank on first launch whether or
+  // not it was edited. If that copy equals the current bundle, treat it as unmodified.
+  const legacy = loadJson<unknown>(LEGACY_QUESTION_BANK_KEY, null);
+
+  if (Array.isArray(legacy) && legacy.length) {
+    const questions = normalizeQuestionBank(legacy as Question[]);
+
+    if (JSON.stringify(questions) === BUNDLED_JSON) {
+      return bundled;
+    }
+
+    return { bundledHash: null, modified: true, questions };
+  }
+
+  return bundled;
+}
+
+function stripCodeFence(content: string): string {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) {
+    return fenced[1];
+  }
+
+  // Tolerate prose around the JSON object.
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  return start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
+}
+
+function parseAiJson(content: string, optionIds: string[]): Omit<AiReview, 'optionsSnapshot'> {
+  const cleaned = stripCodeFence(content);
   const parsed = JSON.parse(cleaned) as Partial<AiReview> & {
     explanation?: string;
     optionExplanations?: Record<string, string> | Array<{ id?: string; explanation?: string }>;
@@ -230,9 +332,30 @@ Existing summary:
 ${question.summary || '(empty)'}`;
 }
 
-async function askOpenRouter(question: Question, settings: AiSettings): Promise<AiReview> {
+/**
+ * Relabels options A, B, C... by their position in the form so the AI, the review card and
+ * applyAiReview all agree on labels, even when stored option ids are not positional.
+ */
+function toPositionalQuestion(question: Question): Question {
+  const labelById = new Map(question.options.map((option, index) => [option.id, displayLabel(index)]));
+
+  return {
+    ...question,
+    options: question.options.map((option, index) => ({ ...option, id: displayLabel(index) })),
+    correctOptionIds: question.correctOptionIds
+      .map((id) => labelById.get(id))
+      .filter((id): id is string => Boolean(id)),
+  };
+}
+
+async function askOpenRouter(
+  question: Question,
+  settings: AiSettings,
+  signal: AbortSignal,
+): Promise<Omit<AiReview, 'optionsSnapshot'>> {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
+    signal,
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
       'Content-Type': 'application/json',
@@ -253,6 +376,7 @@ async function askOpenRouter(question: Question, settings: AiSettings): Promise<
         },
       ],
       temperature: 0.1,
+      response_format: { type: 'json_object' },
     }),
   });
 
@@ -329,6 +453,7 @@ function createSession(
 
 function createEmptyQuestionForm(): QuestionFormState {
   return {
+    optionIds: [null, null, null, null],
     question: '',
     optionTexts: ['', '', '', ''],
     optionExplanations: ['', '', '', ''],
@@ -340,6 +465,7 @@ function createEmptyQuestionForm(): QuestionFormState {
 function questionToForm(question: Question): QuestionFormState {
   return {
     id: question.id,
+    optionIds: question.options.map((option) => option.id),
     question: question.question,
     optionTexts: question.options.map((option) => option.text),
     optionExplanations: question.options.map((option) => option.explanation ?? ''),
@@ -350,9 +476,34 @@ function questionToForm(question: Question): QuestionFormState {
   };
 }
 
+/**
+ * Existing options keep their id, so saved sessions and attempt history keep pointing at the same
+ * option text after an edit. New options get the first free letter.
+ */
+function assignOptionIds(optionIds: Array<string | null>, count: number): string[] {
+  const used = new Set(optionIds.filter((id): id is string => Boolean(id)));
+  let nextLetter = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    const existing = optionIds[index];
+    if (existing) {
+      return existing;
+    }
+
+    while (used.has(displayLabel(nextLetter))) {
+      nextLetter += 1;
+    }
+
+    const id = displayLabel(nextLetter);
+    used.add(id);
+    return id;
+  });
+}
+
 function formToQuestion(form: QuestionFormState, fallbackId: string): Question {
+  const optionIds = assignOptionIds(form.optionIds, form.optionTexts.length);
   const options = form.optionTexts.map<QuestionOption>((text, index) => ({
-    id: displayLabel(index),
+    id: optionIds[index],
     text: text.trim(),
     explanation: form.optionExplanations[index]?.trim() ?? '',
   }));
@@ -361,7 +512,7 @@ function formToQuestion(form: QuestionFormState, fallbackId: string): Question {
     id: form.id ?? fallbackId,
     question: form.question.trim(),
     options,
-    correctOptionIds: form.correctIndexes
+    correctOptionIds: [...new Set(form.correctIndexes)]
       .filter((index) => index >= 0 && index < options.length)
       .sort((a, b) => a - b)
       .map((index) => options[index].id),
@@ -391,6 +542,10 @@ function validateQuestion(question: Question): string[] {
     errors.push('Answer options cannot be blank.');
   }
 
+  if (optionIds.size !== question.options.length) {
+    errors.push('Answer option IDs must be unique.');
+  }
+
   if (!question.correctOptionIds.length) {
     errors.push('Select at least one correct answer.');
   }
@@ -415,43 +570,32 @@ function normalizeImportedQuestion(item: unknown, index: number): Question {
       })
     : [];
 
-  if (typeof candidate.explanation === 'string' && candidate.explanation.trim()) {
-    const optionIds = options.map((option) => option.id);
-    const correctOptionIds = Array.isArray(candidate.correctOptionIds)
-      ? candidate.correctOptionIds.map((id) => String(id).toUpperCase())
-      : [];
-    const legacy = candidate.explanation.trim();
+  const correctOptionIds = Array.isArray(candidate.correctOptionIds)
+    ? candidate.correctOptionIds.map((id) => String(id).toUpperCase())
+    : [];
+  const legacyExplanation =
+    typeof candidate.explanation === 'string' ? candidate.explanation.trim() : '';
+
+  // Legacy format: one explanation for the whole question. Keep it as the summary and give
+  // each option a placeholder so the per-option panel is never blank.
+  if (legacyExplanation) {
     const correctSet = new Set(correctOptionIds);
 
     for (const option of options) {
       if (!option.explanation.trim()) {
         option.explanation = correctSet.has(option.id)
-          ? 'Correct answer for this question. See the summary for additional context.'
-          : 'Not the best choice for this scenario.';
+          ? PLACEHOLDER_CORRECT_EXPLANATION
+          : PLACEHOLDER_INCORRECT_EXPLANATION;
       }
     }
-
-    if (options.length === 1 && optionIds.length === 1) {
-      options[0].explanation = legacy.replace(/^[-*•]\s*(?:Option\s*)?[A-F]\s*[:.)–—-]\s*/i, '');
-    }
-
-    return {
-      id: String(candidate.id || `q${String(index + 1).padStart(3, '0')}`),
-      question: String(candidate.question || ''),
-      options,
-      correctOptionIds,
-      summary: String(candidate.summary || legacy),
-    };
   }
 
   return {
     id: String(candidate.id || `q${String(index + 1).padStart(3, '0')}`),
     question: String(candidate.question || ''),
     options,
-    correctOptionIds: Array.isArray(candidate.correctOptionIds)
-      ? candidate.correctOptionIds.map((id) => String(id).toUpperCase())
-      : [],
-    summary: String(candidate.summary || ''),
+    correctOptionIds,
+    summary: String(candidate.summary || legacyExplanation),
   };
 }
 
@@ -489,10 +633,13 @@ function createNextQuestionId(questions: Question[]): string {
   return `q${String(maxNumber + 1).padStart(3, '0')}`;
 }
 
-function getScore(session: SavedExamState, allQuestions: Question[]) {
-  const byId = new Map(allQuestions.map((question) => [question.id, question]));
-  const results = session.questionOrder.map((questionId) => {
-    const question = byId.get(questionId);
+function getScore(
+  session: SavedExamState,
+  questionById: Map<string, Question>,
+  questionIds: string[] = session.questionOrder,
+) {
+  const results = questionIds.map((questionId) => {
+    const question = questionById.get(questionId);
     const selectedOptionIds = session.selections[questionId] ?? [];
     const correctOptionIds = question?.correctOptionIds ?? [];
 
@@ -513,18 +660,25 @@ function getScore(session: SavedExamState, allQuestions: Question[]) {
   };
 }
 
+/**
+ * The question's options in the order they were shown in a session. Options that no longer exist
+ * are dropped and options added since are appended, so display letters always match what is shown.
+ */
+function getOrderedOptions(question: Question, optionOrder: string[] | undefined): QuestionOption[] {
+  const byId = new Map(question.options.map((option) => [option.id, option]));
+  const ordered = (optionOrder ?? [])
+    .map((id) => byId.get(id))
+    .filter((option): option is QuestionOption => Boolean(option));
+  const shown = new Set(ordered.map((option) => option.id));
+  return [...ordered, ...question.options.filter((option) => !shown.has(option.id))];
+}
+
 type OptionExplanationsPanelProps = {
   question: Question;
-  optionOrder: string[];
+  orderedOptions: QuestionOption[];
 };
 
-function OptionExplanationsPanel({ question, optionOrder }: OptionExplanationsPanelProps) {
-  const effectiveOptionOrder = optionOrder.length
-    ? optionOrder
-    : question.options.map((option) => option.id);
-  const orderedOptions = effectiveOptionOrder
-    .map((id) => question.options.find((option) => option.id === id))
-    .filter((option): option is QuestionOption => Boolean(option));
+function OptionExplanationsPanel({ question, orderedOptions }: OptionExplanationsPanelProps) {
   const correctSet = new Set(question.correctOptionIds);
 
   return (
@@ -562,38 +716,105 @@ function normalizeQuestionBank(questions: Question[]): Question[] {
   return questions.map((question, index) => normalizeImportedQuestion(question, index));
 }
 
+const bundledQuestions = normalizeQuestionBank(questionsJson as Question[]);
+const BUNDLED_JSON = JSON.stringify(bundledQuestions);
+const BUNDLED_HASH = hashString(BUNDLED_JSON);
+
+/**
+ * Makes a saved session consistent with the current question bank instead of discarding it:
+ * drops deleted questions and options, appends newly added options, and keeps the current
+ * question selected when it still exists. Returns null when nothing usable is left.
+ */
+function reconcileSession(
+  session: SavedExamState | null,
+  questionById: Map<string, Question>,
+): SavedExamState | null {
+  if (!session || !Array.isArray(session.questionOrder)) {
+    return null;
+  }
+
+  const questionOrder = session.questionOrder.filter((id) => questionById.has(id));
+
+  if (!questionOrder.length) {
+    return null;
+  }
+
+  const optionOrders: Record<string, string[]> = {};
+  const selections: Record<string, string[]> = {};
+
+  for (const questionId of questionOrder) {
+    const question = questionById.get(questionId)!;
+    const validIds = question.options.map((option) => option.id);
+    const validSet = new Set(validIds);
+    const keptOrder = (session.optionOrders?.[questionId] ?? []).filter((id) => validSet.has(id));
+    optionOrders[questionId] = [...keptOrder, ...validIds.filter((id) => !keptOrder.includes(id))];
+
+    const selected = (session.selections?.[questionId] ?? []).filter((id) => validSet.has(id));
+    if (selected.length) {
+      selections[questionId] = selected;
+    }
+  }
+
+  const kept = new Set(questionOrder);
+  const previousCurrentId = session.questionOrder[session.currentIndex];
+  const currentIndex = kept.has(previousCurrentId)
+    ? questionOrder.indexOf(previousCurrentId)
+    : Math.min(Math.max(session.currentIndex ?? 0, 0), questionOrder.length - 1);
+
+  return {
+    ...session,
+    questionOrder,
+    optionOrders,
+    selections,
+    currentIndex,
+    submittedQuestionIds: (session.submittedQuestionIds ?? []).filter((id) => kept.has(id)),
+    flaggedQuestionIds: (session.flaggedQuestionIds ?? []).filter((id) => kept.has(id)),
+  };
+}
+
+function snapshotOptions(optionTexts: string[]): string {
+  return JSON.stringify(optionTexts.map((text) => text.trim()));
+}
+
+function buildQuestionMap(questions: Question[]): Map<string, Question> {
+  return new Map(questions.map((question) => [question.id, question]));
+}
+
 function App() {
-  const [questionBank, setQuestionBank] = useState<Question[]>(() =>
-    normalizeQuestionBank(loadJson<Question[]>(QUESTION_BANK_KEY, defaultQuestions)),
-  );
+  const [storedBank, setStoredBank] = useState<StoredQuestionBank>(loadQuestionBank);
+  const questionBank = storedBank.questions;
+  const bundledUpdateAvailable = storedBank.modified && storedBank.bundledHash !== BUNDLED_HASH;
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(() =>
     createEmptyQuestionForm(),
   );
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [formWarnings, setFormWarnings] = useState<string[]>([]);
-  const [aiSettings, setAiSettings] = useState<AiSettings>(() =>
-    loadJson<AiSettings>(AI_SETTINGS_KEY, { apiKey: '', model: DEFAULT_AI_MODEL }),
-  );
-  const [examSettings, setExamSettings] = useState<ExamSettings>(() =>
-    loadJson<ExamSettings>(EXAM_SETTINGS_KEY, DEFAULT_EXAM_SETTINGS),
-  );
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => ({
+    apiKey: '',
+    model: DEFAULT_AI_MODEL,
+    ...loadJson<Partial<AiSettings>>(AI_SETTINGS_KEY, {}),
+  }));
+  const [examSettings, setExamSettings] = useState<ExamSettings>(() => ({
+    ...DEFAULT_EXAM_SETTINGS,
+    ...loadJson<Partial<ExamSettings>>(EXAM_SETTINGS_KEY, {}),
+  }));
   const [aiStatus, setAiStatus] = useState<AiStatus>({ loading: false, error: null });
   const [aiReview, setAiReview] = useState<AiReview | null>(null);
+  const aiRequestRef = useRef<AbortController | null>(null);
   const [settingsReturnScreen, setSettingsReturnScreen] = useState<Screen>('home');
-  const questionById = useMemo(
-    () => new Map(questionBank.map((question) => [question.id, question])),
-    [questionBank],
-  );
+  const questionById = useMemo(() => buildQuestionMap(questionBank), [questionBank]);
   const [session, setSession] = useState<SavedExamState | null>(() =>
-    loadJson<SavedExamState | null>(SESSION_KEY, null),
+    reconcileSession(loadJson<SavedExamState | null>(SESSION_KEY, null), questionById),
   );
-  const [attempts, setAttempts] = useState<Attempt[]>(() =>
-    loadJson<Attempt[]>(ATTEMPTS_KEY, []),
-  );
+  const [attempts, setAttempts] = useState<Attempt[]>(() => {
+    const stored = loadJson<Attempt[]>(ATTEMPTS_KEY, []);
+    return Array.isArray(stored) ? stored : [];
+  });
   const [screen, setScreen] = useState<Screen>(() => (session ? 'session' : 'home'));
   const [latestAttempt, setLatestAttempt] = useState<Attempt | null>(null);
   const [offlineInstallStatus, setOfflineInstallStatus] = useState<OfflineInstallStatus>('checking');
   const [offlineReadyNotice, setOfflineReadyNotice] = useState(false);
+  const [storageError, setStorageError] = useState(false);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -652,29 +873,57 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(QUESTION_BANK_KEY, JSON.stringify(questionBank));
-  }, [questionBank]);
+  const persist = (key: string, value: unknown) => {
+    if (!saveJson(key, value)) {
+      setStorageError(true);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(aiSettings));
+    // An unmodified bank is not copied into storage, so a newer bundled questions.json is
+    // picked up automatically on the next launch.
+    const saved = saveJson(
+      QUESTION_BANK_KEY,
+      storedBank.modified ? storedBank : { ...storedBank, questions: [] },
+    );
+
+    if (saved) {
+      removeStoredKey(LEGACY_QUESTION_BANK_KEY);
+    } else {
+      setStorageError(true);
+    }
+  }, [storedBank]);
+
+  useEffect(() => {
+    persist(AI_SETTINGS_KEY, aiSettings);
   }, [aiSettings]);
 
   useEffect(() => {
-    localStorage.setItem(EXAM_SETTINGS_KEY, JSON.stringify(examSettings));
+    persist(EXAM_SETTINGS_KEY, examSettings);
   }, [examSettings]);
 
   useEffect(() => {
     if (session) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      persist(SESSION_KEY, session);
     } else {
-      localStorage.removeItem(SESSION_KEY);
+      removeStoredKey(SESSION_KEY);
     }
   }, [session]);
 
   useEffect(() => {
-    localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
+    persist(ATTEMPTS_KEY, attempts);
   }, [attempts]);
+
+  // Never leave the user on an empty session screen (for example after the last question of the
+  // session was deleted from the bank).
+  useEffect(() => {
+    if ((screen === 'session' || screen === 'review') && !session) {
+      setScreen('home');
+    }
+  }, [screen, session]);
+
+  // Abort an in-flight Ask AI request when the app unmounts.
+  useEffect(() => () => aiRequestRef.current?.abort(), []);
 
   const currentQuestionId = session?.questionOrder[session.currentIndex];
   const currentQuestion = currentQuestionId ? questionById.get(currentQuestionId) : undefined;
@@ -707,20 +956,43 @@ function App() {
       return;
     }
 
-    const score = getScore(session, questionBank);
+    // Practice can be finished early: only submitted questions are scored.
+    let scoredIds = session.questionOrder;
+
+    if (session.mode === 'practice') {
+      const submitted = new Set(session.submittedQuestionIds);
+      scoredIds = session.questionOrder.filter((id) => submitted.has(id));
+
+      if (!scoredIds.length) {
+        window.alert('Submit at least one answer before finishing.');
+        return;
+      }
+
+      if (
+        scoredIds.length < session.questionOrder.length &&
+        !window.confirm(
+          `You have submitted ${scoredIds.length} of ${session.questionOrder.length} questions. ` +
+            'Finish now and score only the submitted ones?',
+        )
+      ) {
+        return;
+      }
+    }
+
+    const score = getScore(session, questionById, scoredIds);
     const completedAt = new Date().toISOString();
     const attempt: Attempt = {
       id: `${Date.now()}`,
       mode: session.mode,
       startedAt: session.startedAt,
       completedAt,
-      totalQuestions: session.questionOrder.length,
+      totalQuestions: scoredIds.length,
       correctCount: score.correctCount,
       wrongCount: score.wrongCount,
       results: score.results,
     };
 
-    setAttempts((current) => [attempt, ...current].slice(0, 20));
+    setAttempts((current) => [attempt, ...current].slice(0, MAX_SAVED_ATTEMPTS));
     setLatestAttempt(attempt);
     setSession(null);
     setScreen('results');
@@ -782,9 +1054,9 @@ function App() {
       return;
     }
 
+    // QuestionView scrolls itself to the top whenever the shown question changes.
     setSession({ ...session, currentIndex: index });
     setScreen('session');
-    requestAnimationFrame(() => scrollSessionToTop());
   };
 
   const moveQuestion = (direction: -1 | 1) => {
@@ -826,33 +1098,44 @@ function App() {
     }
   };
 
+  /** Replaces the bank and keeps any in-progress session usable instead of discarding it. */
+  const applyQuestionBank = (next: StoredQuestionBank) => {
+    const nextById = buildQuestionMap(next.questions);
+    setStoredBank(next);
+    setSession((current) => reconcileSession(current, nextById));
+  };
+
   const saveQuestionBank = (nextQuestions: Question[]) => {
-    if (session) {
-      setSession(null);
-      setLatestAttempt(null);
-    }
-
-    setQuestionBank(nextQuestions);
+    applyQuestionBank({
+      bundledHash: storedBank.bundledHash,
+      modified: true,
+      questions: nextQuestions,
+    });
   };
 
-  const openNewQuestionForm = () => {
-    setQuestionForm(createEmptyQuestionForm());
-    setFormErrors([]);
-    setFormWarnings([]);
+  const restoreBundledQuestionBank = () => {
+    applyQuestionBank({ bundledHash: BUNDLED_HASH, modified: false, questions: bundledQuestions });
+  };
+
+  const cancelAiRequest = () => {
+    aiRequestRef.current?.abort();
+    aiRequestRef.current = null;
     setAiReview(null);
     setAiStatus({ loading: false, error: null });
+  };
+
+  const openQuestionForm = (form: QuestionFormState) => {
+    cancelAiRequest();
+    setQuestionForm(form);
+    setFormErrors([]);
+    setFormWarnings([]);
     setScreen('question-form');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const openEditQuestionForm = (question: Question) => {
-    setQuestionForm(questionToForm(question));
-    setFormErrors([]);
-    setFormWarnings([]);
-    setAiReview(null);
-    setAiStatus({ loading: false, error: null });
-    setScreen('question-form');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const closeQuestionForm = () => {
+    cancelAiRequest();
+    setScreen('bank');
   };
 
   const saveQuestion = (form: QuestionFormState) => {
@@ -874,7 +1157,7 @@ function App() {
       : [...questionBank, nextQuestion];
 
     saveQuestionBank(nextQuestions);
-    setScreen('bank');
+    closeQuestionForm();
   };
 
   const duplicateQuestion = (question: Question) => {
@@ -893,18 +1176,22 @@ function App() {
     }
 
     saveQuestionBank(questionBank.filter((question) => question.id !== questionId));
-    if (questionForm.id === questionId) {
-      setScreen('bank');
+    if (screen === 'question-form' && questionForm.id === questionId) {
+      closeQuestionForm();
     }
   };
 
   const resetQuestionBank = () => {
-    if (!window.confirm('Reset the editable question bank to the original questions.json?')) {
+    if (
+      !window.confirm(
+        'Reset the question bank to the bundled questions.json? Your local edits will be lost. ' +
+          'Export first if you want to keep them.',
+      )
+    ) {
       return;
     }
 
-    localStorage.removeItem(QUESTION_BANK_KEY);
-    saveQuestionBank(defaultQuestions);
+    restoreBundledQuestionBank();
   };
 
   const exportQuestionBank = () => {
@@ -915,14 +1202,26 @@ function App() {
     const link = document.createElement('a');
     link.href = url;
     link.download = 'questions.json';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    // Revoking synchronously can cancel the download in Safari, especially as an installed PWA.
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   const importQuestionBank = async (file: File) => {
     try {
       const text = await file.text();
       const imported = validateQuestionBank(JSON.parse(text));
+
+      if (
+        !window.confirm(
+          `Replace the current ${questionBank.length} questions with ${imported.length} imported questions?`,
+        )
+      ) {
+        return;
+      }
+
       saveQuestionBank(imported);
       window.alert(`Imported ${imported.length} questions.`);
     } catch (error) {
@@ -949,19 +1248,51 @@ function App() {
       return;
     }
 
+    aiRequestRef.current?.abort();
+    const controller = new AbortController();
+    aiRequestRef.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, AI_REQUEST_TIMEOUT_MS);
+
     setFormErrors([]);
     setAiStatus({ loading: true, error: null });
     setAiReview(null);
 
     try {
-      const review = await askOpenRouter(candidateQuestion, aiSettings);
-      setAiReview(review);
+      const review = await askOpenRouter(
+        toPositionalQuestion(candidateQuestion),
+        aiSettings,
+        controller.signal,
+      );
+
+      // Ignore the reply if the user opened another question or left the form meanwhile.
+      if (aiRequestRef.current !== controller) {
+        return;
+      }
+
+      setAiReview({ ...review, optionsSnapshot: snapshotOptions(questionForm.optionTexts) });
       setAiStatus({ loading: false, error: null });
     } catch (error) {
+      if (aiRequestRef.current !== controller) {
+        return;
+      }
+
       setAiStatus({
         loading: false,
-        error: error instanceof Error ? error.message : 'Ask AI failed.',
+        error: timedOut
+          ? `Ask AI timed out after ${AI_REQUEST_TIMEOUT_MS / 1000} seconds. Try again or pick a faster model.`
+          : error instanceof Error
+            ? error.message
+            : 'Ask AI failed.',
       });
+    } finally {
+      window.clearTimeout(timeout);
+      if (aiRequestRef.current === controller) {
+        aiRequestRef.current = null;
+      }
     }
   };
 
@@ -970,53 +1301,40 @@ function App() {
       return;
     }
 
-    const correctIndexes = aiReview.recommendedOptionIds
-      .map((id) => questionForm.optionTexts.findIndex((_, index) => displayLabel(index) === id))
-      .filter((index) => index >= 0);
-    const mergedSummary = [
-      questionForm.summary.trim(),
-      aiReview.summary.trim() && `AI summary (${new Date().toLocaleString()}):\n${aiReview.summary.trim()}`,
-    ]
-      .filter(Boolean)
-      .join('\n\n');
+    if (aiReview.optionsSnapshot !== snapshotOptions(questionForm.optionTexts)) {
+      window.alert('The answer options changed after this AI review. Ask AI again before applying.');
+      return;
+    }
+
+    // The AI works with positional labels (A = first option in the form, ...).
+    const timestamp = new Date().toLocaleString();
     const optionExplanations = questionForm.optionTexts.map((_, index) => {
-      const optionId = displayLabel(index);
-      const aiText = aiReview.optionExplanations[optionId]?.trim() ?? '';
+      const aiText = aiReview.optionExplanations[displayLabel(index)]?.trim() ?? '';
       const currentText = questionForm.optionExplanations[index]?.trim() ?? '';
 
       if (mode === 'merge-explanation') {
-        return [currentText, aiText && `AI (${new Date().toLocaleString()}): ${aiText}`]
-          .filter(Boolean)
-          .join('\n\n');
+        return [currentText, aiText && `AI (${timestamp}): ${aiText}`].filter(Boolean).join('\n\n');
       }
 
       return aiText || currentText;
     });
+    const summary =
+      mode === 'merge-explanation'
+        ? [
+            questionForm.summary.trim(),
+            aiReview.summary.trim() && `AI summary (${timestamp}):\n${aiReview.summary.trim()}`,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        : aiReview.summary.trim();
+    const correctIndexes =
+      mode === 'replace-all'
+        ? aiReview.recommendedOptionIds
+            .map((label) => label.charCodeAt(0) - 65)
+            .filter((index) => index >= 0 && index < questionForm.optionTexts.length)
+        : questionForm.correctIndexes;
 
-    if (mode === 'replace-all') {
-      setQuestionForm({
-        ...questionForm,
-        correctIndexes,
-        optionExplanations,
-        summary: aiReview.summary.trim(),
-      });
-    }
-
-    if (mode === 'replace-explanation') {
-      setQuestionForm({
-        ...questionForm,
-        optionExplanations,
-        summary: aiReview.summary.trim(),
-      });
-    }
-
-    if (mode === 'merge-explanation') {
-      setQuestionForm({
-        ...questionForm,
-        optionExplanations,
-        summary: mergedSummary,
-      });
-    }
+    setQuestionForm({ ...questionForm, correctIndexes, optionExplanations, summary });
   };
 
   return (
@@ -1036,8 +1354,59 @@ function App() {
         </div>
       </header>
 
+      {storageError && (
+        <section className="panel notice-panel notice-panel-warning" role="alert">
+          <div>
+            <h2>Could not save on this device</h2>
+            <p>
+              The browser refused to store your latest changes (storage may be full or disabled,
+              for example in private browsing). Export your question bank to keep a copy, and
+              clear old attempt history to free space.
+            </p>
+          </div>
+          <button className="ghost-button" onClick={() => setStorageError(false)}>
+            Dismiss
+          </button>
+        </section>
+      )}
+
       {screen === 'home' && (
         <>
+          {bundledUpdateAvailable && (
+            <section className="panel notice-panel notice-panel-info">
+              <div>
+                <h2>New questions.json available</h2>
+                <p>
+                  This app version ships a different question bank ({bundledQuestions.length}{' '}
+                  questions) than the one you edited on this device ({questionBank.length}{' '}
+                  questions). Switching replaces your local edits, so export them first if you
+                  want to keep them.
+                </p>
+              </div>
+              <div className="notice-actions">
+                <button className="secondary-button" onClick={exportQuestionBank}>
+                  Export mine
+                </button>
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    if (window.confirm('Replace your edited question bank with the new questions.json?')) {
+                      restoreBundledQuestionBank();
+                    }
+                  }}
+                >
+                  Use new questions
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => setStoredBank({ ...storedBank, bundledHash: BUNDLED_HASH })}
+                >
+                  Keep mine
+                </button>
+              </div>
+            </section>
+          )}
+
           {(offlineInstallStatus === 'needs-https' ||
             (isStandaloneApp() && offlineInstallStatus === 'missing')) && (
             <section className="panel notice-panel notice-panel-warning">
@@ -1138,7 +1507,7 @@ function App() {
             </button>
           </section>
 
-          <History attempts={attempts} questions={questionBank} onClear={clearHistory} />
+          <History attempts={attempts} questionById={questionById} onClear={clearHistory} />
         </>
       )}
 
@@ -1147,7 +1516,10 @@ function App() {
           question={currentQuestion}
           session={session}
           selectedIds={selectedIds}
-          optionOrder={session.optionOrders[currentQuestion.id] ?? []}
+          orderedOptions={getOrderedOptions(
+            currentQuestion,
+            session.optionOrders[currentQuestion.id],
+          )}
           isSubmitted={submittedIds.has(currentQuestion.id)}
           isFlagged={flaggedIds.has(currentQuestion.id)}
           answeredCount={answeredCount}
@@ -1160,13 +1532,14 @@ function App() {
           onSubmitPractice={submitPracticeAnswer}
           onFinishPractice={endSession}
           onDiscard={resetCurrentSession}
+          onMenu={() => setScreen('home')}
         />
       )}
 
       {screen === 'review' && session && (
         <ReviewView
           session={session}
-          questions={questionBank}
+          questionById={questionById}
           answeredCount={answeredCount}
           onGoToQuestion={goToQuestion}
           onBack={() => setScreen('session')}
@@ -1177,7 +1550,7 @@ function App() {
       {screen === 'results' && latestAttempt && (
         <ResultsView
           attempt={latestAttempt}
-          questions={questionBank}
+          questionById={questionById}
           onHome={() => setScreen('home')}
           onNewExam={() => startSession('exam')}
           onNewPractice={() => startSession('practice')}
@@ -1187,10 +1560,10 @@ function App() {
       {screen === 'bank' && (
         <QuestionBankView
           questions={questionBank}
-          defaultCount={defaultQuestions.length}
+          defaultCount={bundledQuestions.length}
           onBack={() => setScreen('home')}
-          onAdd={openNewQuestionForm}
-          onEdit={openEditQuestionForm}
+          onAdd={() => openQuestionForm(createEmptyQuestionForm())}
+          onEdit={(question) => openQuestionForm(questionToForm(question))}
           onDuplicate={duplicateQuestion}
           onDelete={deleteQuestion}
           onImport={importQuestionBank}
@@ -1208,7 +1581,7 @@ function App() {
           aiStatus={aiStatus}
           aiReview={aiReview}
           onChange={setQuestionForm}
-          onCancel={() => setScreen('bank')}
+          onCancel={closeQuestionForm}
           onSave={saveQuestion}
           onDelete={questionForm.id ? deleteQuestion : undefined}
           onAskAi={askAiForCurrentQuestion}
@@ -1238,7 +1611,7 @@ type QuestionViewProps = {
   question: Question;
   session: SavedExamState;
   selectedIds: string[];
-  optionOrder: string[];
+  orderedOptions: QuestionOption[];
   isSubmitted: boolean;
   isFlagged: boolean;
   answeredCount: number;
@@ -1251,6 +1624,7 @@ type QuestionViewProps = {
   onSubmitPractice: () => void;
   onFinishPractice: () => void;
   onDiscard: () => void;
+  onMenu: () => void;
 };
 
 type QuestionBankViewProps = {
@@ -1457,6 +1831,7 @@ function QuestionFormView({
   const addOption = () => {
     onChange({
       ...form,
+      optionIds: [...form.optionIds, null],
       optionTexts: [...form.optionTexts, ''],
       optionExplanations: [...form.optionExplanations, ''],
     });
@@ -1467,6 +1842,7 @@ function QuestionFormView({
       return;
     }
 
+    const optionIds = form.optionIds.filter((_, currentIndex) => currentIndex !== index);
     const optionTexts = form.optionTexts.filter((_, currentIndex) => currentIndex !== index);
     const optionExplanations = form.optionExplanations.filter(
       (_, currentIndex) => currentIndex !== index,
@@ -1474,7 +1850,7 @@ function QuestionFormView({
     const correctIndexes = form.correctIndexes
       .filter((currentIndex) => currentIndex !== index)
       .map((currentIndex) => (currentIndex > index ? currentIndex - 1 : currentIndex));
-    onChange({ ...form, optionTexts, optionExplanations, correctIndexes });
+    onChange({ ...form, optionIds, optionTexts, optionExplanations, correctIndexes });
   };
 
   return (
@@ -1816,7 +2192,7 @@ function QuestionView({
   question,
   session,
   selectedIds,
-  optionOrder,
+  orderedOptions,
   isSubmitted,
   isFlagged,
   answeredCount,
@@ -1829,21 +2205,20 @@ function QuestionView({
   onSubmitPractice,
   onFinishPractice,
   onDiscard,
+  onMenu,
 }: QuestionViewProps) {
   const questionTopRef = useRef<HTMLElement>(null);
   const isMultiAnswer = question.correctOptionIds.length > 1;
-  const effectiveOptionOrder = optionOrder.length
-    ? optionOrder
-    : question.options.map((option) => option.id);
-  const orderedOptions = effectiveOptionOrder
-    .map((id) => question.options.find((option) => option.id === id))
-    .filter((option): option is Question['options'][number] => Boolean(option));
+  const optionOrder = orderedOptions.map((option) => option.id);
   const totalQuestions = session.questionOrder.length;
   const questionNumber = session.currentIndex + 1;
   const canGoBack = session.currentIndex > 0;
   const canGoNext = session.currentIndex < totalQuestions - 1;
   const isPracticeComplete = session.mode === 'practice' && submittedCount === totalQuestions;
   const isCorrect = sameAnswer(selectedIds, question.correctOptionIds);
+  const isAnswerLocked = session.mode === 'practice' && isSubmitted;
+  const isAtSelectionLimit =
+    isMultiAnswer && !isAnswerLocked && selectedIds.length >= question.correctOptionIds.length;
 
   useEffect(() => {
     scrollSessionToTop(questionTopRef.current);
@@ -1858,12 +2233,24 @@ function QuestionView({
             Question {questionNumber} of {totalQuestions}
           </h2>
         </div>
-        <button className="ghost-button" onClick={onDiscard}>
-          Discard
-        </button>
+        <div className="session-bar-actions">
+          <button className="secondary-button" onClick={onMenu}>
+            Menu
+          </button>
+          <button className="ghost-button" onClick={onDiscard}>
+            Discard
+          </button>
+        </div>
       </div>
 
-      <div className="progress-track" aria-label="Session progress">
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label="Session progress"
+        aria-valuemin={1}
+        aria-valuemax={totalQuestions}
+        aria-valuenow={questionNumber}
+      >
         <span style={{ width: `${(questionNumber / totalQuestions) * 100}%` }} />
       </div>
 
@@ -1879,7 +2266,7 @@ function QuestionView({
         {orderedOptions.map((option, index) => {
           const isSelected = selectedIds.includes(option.id);
           const inputType = isMultiAnswer ? 'checkbox' : 'radio';
-          const shouldShowAnswer = session.mode === 'practice' && isSubmitted;
+          const shouldShowAnswer = isAnswerLocked;
           const isCorrectOption = question.correctOptionIds.includes(option.id);
           const visibleLabel = displayLabel(index);
 
@@ -1909,17 +2296,23 @@ function QuestionView({
         })}
       </div>
 
-      {session.mode === 'practice' && isSubmitted && (
-        <div className={isCorrect ? 'feedback correct-feedback' : 'feedback wrong-feedback'}>
+      {isAtSelectionLimit && (
+        <p className="selection-hint">
+          You have selected {selectedIds.length}. Deselect one to choose a different option.
+        </p>
+      )}
+
+      {isAnswerLocked && (
+        <div
+          className={isCorrect ? 'feedback correct-feedback' : 'feedback wrong-feedback'}
+          aria-live="polite"
+        >
           <h3>{isCorrect ? 'Correct' : 'Incorrect'}</h3>
           <p>
             Correct answer:{' '}
-            <strong>{displayAnswer(question.correctOptionIds, effectiveOptionOrder)}</strong>
+            <strong>{displayAnswer(question.correctOptionIds, optionOrder)}</strong>
           </p>
-          <OptionExplanationsPanel
-            question={question}
-            optionOrder={effectiveOptionOrder}
-          />
+          <OptionExplanationsPanel question={question} orderedOptions={orderedOptions} />
         </div>
       )}
 
@@ -1927,12 +2320,11 @@ function QuestionView({
         <button className="secondary-button" onClick={onPrevious} disabled={!canGoBack}>
           Previous
         </button>
-        <button className="secondary-button" onClick={onToggleFlag}>
-          {isFlagged ? 'Unflag' : 'Flag'}
-        </button>
-
         {session.mode === 'exam' ? (
           <>
+            <button className="secondary-button" onClick={onToggleFlag}>
+              {isFlagged ? 'Unflag' : 'Flag'}
+            </button>
             <button className="secondary-button" onClick={onNext} disabled={!canGoNext}>
               Next
             </button>
@@ -1955,10 +2347,16 @@ function QuestionView({
                 Next
               </button>
             )}
-            {isPracticeComplete && (
+            {isPracticeComplete ? (
               <button className="primary-button" onClick={onFinishPractice}>
                 Finish
               </button>
+            ) : (
+              submittedCount > 0 && (
+                <button className="ghost-button" onClick={onFinishPractice}>
+                  Finish early
+                </button>
+              )
             )}
           </>
         )}
@@ -1969,7 +2367,7 @@ function QuestionView({
 
 type ReviewViewProps = {
   session: SavedExamState;
-  questions: Question[];
+  questionById: Map<string, Question>;
   answeredCount: number;
   onGoToQuestion: (index: number) => void;
   onBack: () => void;
@@ -1978,13 +2376,12 @@ type ReviewViewProps = {
 
 function ReviewView({
   session,
-  questions,
+  questionById,
   answeredCount,
   onGoToQuestion,
   onBack,
   onSubmit,
 }: ReviewViewProps) {
-  const questionById = new Map(questions.map((question) => [question.id, question]));
   const flaggedIds = new Set(session.flaggedQuestionIds);
   const unanswered = session.questionOrder.length - answeredCount;
 
@@ -2026,7 +2423,7 @@ function ReviewView({
               <span>Question {index + 1}</span>
               <strong>{status}</strong>
               {flaggedIds.has(questionId) && <em>Flagged</em>}
-              <small>{question?.question.slice(0, 130)}...</small>
+              <small>{truncate(question?.question ?? '', 130)}</small>
             </button>
           );
         })}
@@ -2046,15 +2443,26 @@ function ReviewView({
 
 type ResultsViewProps = {
   attempt: Attempt;
-  questions: Question[];
+  questionById: Map<string, Question>;
   onHome: () => void;
   onNewExam: () => void;
   onNewPractice: () => void;
 };
 
-function ResultsView({ attempt, questions, onHome, onNewExam, onNewPractice }: ResultsViewProps) {
-  const questionById = new Map(questions.map((question) => [question.id, question]));
-  const percentage = Math.round((attempt.correctCount / attempt.totalQuestions) * 100);
+function scorePercentage(attempt: Attempt): number {
+  return attempt.totalQuestions
+    ? Math.round((attempt.correctCount / attempt.totalQuestions) * 100)
+    : 0;
+}
+
+function ResultsView({
+  attempt,
+  questionById,
+  onHome,
+  onNewExam,
+  onNewPractice,
+}: ResultsViewProps) {
+  const percentage = scorePercentage(attempt);
 
   return (
     <section className="panel">
@@ -2097,12 +2505,21 @@ function ResultsView({ attempt, questions, onHome, onNewExam, onNewPractice }: R
           const question = questionById.get(result.questionId);
 
           if (!question) {
-            return null;
+            return (
+              <article key={result.questionId} className="result-card">
+                <div className="result-heading">
+                  <span>Question {index + 1}</span>
+                  <strong className={result.isCorrect ? 'result-correct' : 'result-wrong'}>
+                    {result.isCorrect ? 'Correct' : 'Wrong'}
+                  </strong>
+                </div>
+                <p className="empty-note">This question was deleted from the question bank.</p>
+              </article>
+            );
           }
 
-          const optionOrder = result.optionOrder?.length
-            ? result.optionOrder
-            : question.options.map((option) => option.id);
+          const orderedOptions = getOrderedOptions(question, result.optionOrder);
+          const optionOrder = orderedOptions.map((option) => option.id);
 
           return (
             <article key={result.questionId} className="result-card">
@@ -2119,7 +2536,7 @@ function ResultsView({ attempt, questions, onHome, onNewExam, onNewPractice }: R
               <p>
                 Correct answer: <strong>{displayAnswer(result.correctOptionIds, optionOrder)}</strong>
               </p>
-              <OptionExplanationsPanel question={question} optionOrder={optionOrder} />
+              <OptionExplanationsPanel question={question} orderedOptions={orderedOptions} />
             </article>
           );
         })}
@@ -2130,12 +2547,11 @@ function ResultsView({ attempt, questions, onHome, onNewExam, onNewPractice }: R
 
 type HistoryProps = {
   attempts: Attempt[];
-  questions: Question[];
+  questionById: Map<string, Question>;
   onClear: () => void;
 };
 
-function History({ attempts, questions, onClear }: HistoryProps) {
-  const questionById = new Map(questions.map((question) => [question.id, question]));
+function History({ attempts, questionById, onClear }: HistoryProps) {
 
   if (!attempts.length) {
     return (
@@ -2161,7 +2577,7 @@ function History({ attempts, questions, onClear }: HistoryProps) {
       <div className="history-list">
         {attempts.map((attempt) => {
           const wrongQuestions = attempt.results.filter((result) => !result.isCorrect);
-          const percentage = Math.round((attempt.correctCount / attempt.totalQuestions) * 100);
+          const percentage = scorePercentage(attempt);
 
           return (
             <details key={attempt.id} className="history-item">
@@ -2179,7 +2595,11 @@ function History({ attempts, questions, onClear }: HistoryProps) {
                 <ul>
                   {wrongQuestions.map((result) => {
                     const question = questionById.get(result.questionId);
-                    return <li key={result.questionId}>{question?.question.slice(0, 160)}...</li>;
+                    return (
+                      <li key={result.questionId}>
+                        {question ? truncate(question.question, 160) : '(question deleted)'}
+                      </li>
+                    );
                   })}
                 </ul>
               )}

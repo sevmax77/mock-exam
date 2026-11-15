@@ -3,12 +3,32 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const inputPath = process.argv[2]
-  ? path.resolve(process.argv[2])
-  : path.join(projectRoot, 'src', 'data', 'questions copy.json');
-const outputPath = process.argv[3]
-  ? path.resolve(process.argv[3])
-  : path.join(projectRoot, 'src', 'data', 'questions.json');
+const args = process.argv.slice(2);
+const force = args.includes('--force');
+const [inputArg, outputArg] = args.filter((arg) => arg !== '--force');
+
+if (!inputArg) {
+  console.error(
+    [
+      'Usage: npm run migrate:explanations -- <input.json> [output.json] [--force]',
+      'Converts legacy questions (one `explanation` per question) to per-option explanations.',
+      'The output defaults to <input>.migrated.json. Existing files are only overwritten with --force.',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
+const inputPath = path.resolve(inputArg);
+const outputPath = outputArg
+  ? path.resolve(outputArg)
+  : inputPath.replace(/(\.json)?$/i, '.migrated.json');
+
+if (fs.existsSync(outputPath) && !force) {
+  console.error(
+    `${path.relative(projectRoot, outputPath)} already exists. Pass --force to overwrite it.`,
+  );
+  process.exit(1);
+}
 
 const SECTION_START =
   /^(?:why the other|why other|why the remaining|conclusion|references|solution justification|justification)\b/i;

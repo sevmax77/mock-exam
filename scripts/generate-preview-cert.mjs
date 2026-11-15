@@ -2,11 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import selfsigned from 'selfsigned';
-import {
-  getNetworkCandidates,
-  pickPreferredIp,
-  printIphoneUrlHelp,
-} from './network-addresses.mjs';
+import { getNetworkCandidates, pickPreferredIp } from './network-addresses.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '..');
@@ -91,4 +87,4 @@ if (needsRegenerate) {
   console.log(`Using existing preview certificate for ${ip}`);
 }
 
-printIphoneUrlHelp(4173);
+// The iPhone URL guide is printed by the Vite preview server once it starts (vite.config.ts).

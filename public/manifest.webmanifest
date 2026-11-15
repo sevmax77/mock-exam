@@ -1,9 +1,0 @@
-{
-  "name": "Mock Exam",
-  "short_name": "Mock Exam",
-  "description": "Personal local mock exam practice app",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#f3f6fb",
-  "theme_color": "#14213d"
-}

@@ -119,6 +119,9 @@ Always open the app from the Home Screen icon, not from an old Safari tab.
 
 When you update the app or bundled `questions.json`, run `npm run serve` again and open the Home Screen app once while it can reach the Windows machine so Safari can download the new version.
 
+- If you never edited questions on that device, the new `questions.json` is used automatically.
+- If you did edit, import or delete questions on that device, the app keeps your version and shows **New questions.json available** on the home screen. Choose **Export mine** to save your edits, then **Use new questions** to switch, or **Keep mine** to hide the notice.
+
 ## Add Your Questions
 
 Replace or extend `src/data/questions.json`.
@@ -147,6 +150,14 @@ Each question uses this shape:
 ```
 
 Use one ID in `correctOptionIds` for a single-answer question. Use two or more IDs for a multi-answer question. Every option should have its own explanation so review text stays attached to the option even when answers are shuffled.
+
+## Scripts
+
+| Command | What it does |
+|---------|--------------|
+| `npm run import:pdf` | Extracts questions from the PDF in `src/data/` into `src/data/questions.imported.json` (legacy format). Never overwrites an existing file unless you pass `-- --force`. |
+| `npm run migrate:explanations -- <input.json>` | Converts legacy questions to per-option explanations, writing `<input>.migrated.json`. |
+| `npm run generate:icons` | Regenerates the PNG app icons in `public/` from `public/favicon.svg`. |
 
 ## Features
 

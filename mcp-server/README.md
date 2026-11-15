@@ -7,12 +7,14 @@ answer options, the correct option id(s), a per-option explanation, and an
 overall summary — picked at random from `questions.json`.
 
 This is a standalone project, separate from the Vite app in the repo root.
-`questions.json` here is a **one-time copy** of `../src/data/questions.json`
-(not auto-synced). Re-copy it manually if you want to refresh the bank:
+It serves the first question bank it finds:
 
-```bash
-cp ../src/data/questions.json ./questions.json
-```
+1. the file named by the `MOCK_EXAM_QUESTIONS` environment variable, if set;
+2. the web app's bank, `../src/data/questions.json`, so the two never drift apart;
+3. `questions.json` next to `server.py`, for running the server outside this repo.
+
+The bank is validated at startup, and the server refuses to start if a question
+is malformed (for example, a correct answer that isn't one of the options).
 
 ## Setup
 
@@ -83,7 +85,15 @@ Open the printed URL, choose transport type `Streamable HTTP`, enter
 
 ### `get_random_question`
 
-No input arguments. Returns:
+All arguments are optional:
+
+| Argument | Type | Effect |
+|---|---|---|
+| `question_id` | string | Return this specific question instead of a random one. |
+| `multi_answer_only` | boolean | Pick only select-all-that-apply questions. |
+| `exclude_ids` | string[] | Skip these ids, e.g. questions already asked in this quiz. |
+
+Returns:
 
 ```json
 {

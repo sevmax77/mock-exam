@@ -24,49 +24,80 @@ export default function (pi: ExtensionAPI) {
 	let client: Client | undefined;
 	let connecting: Promise<Client> | undefined;
 
-	async function getClient(opts?: { signal?: AbortSignal }): Promise<Client> {
+	async function getClient(opts?: { timeoutMs?: number }): Promise<Client> {
 		if (client) return client;
 		if (connecting) return connecting;
 
 		connecting = (async () => {
-			const transport = new StreamableHTTPClientTransport(
-				new URL(MCP_SERVER_URL),
-				opts?.signal ? { requestInit: { signal: opts.signal } } : undefined,
-			);
+			// No per-connection signal on the transport: a signal set in requestInit would apply to
+			// every later request on this connection. The connect timeout is enforced separately.
+			const transport = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL));
 			const c = new Client({ name: "pi-mock-exam-extension", version: "0.1.0" });
+			let timer: ReturnType<typeof setTimeout> | undefined;
 			try {
-				await c.connect(transport);
+				const connected = c.connect(transport);
+				if (opts?.timeoutMs) {
+					await Promise.race([
+						connected,
+						new Promise<never>((_, reject) => {
+							timer = setTimeout(
+								() => reject(new Error(`timed out after ${opts.timeoutMs} ms`)),
+								opts.timeoutMs,
+							);
+						}),
+					]);
+				} else {
+					await connected;
+				}
 			} catch (err) {
-				connecting = undefined;
+				await c.close().catch(() => {});
 				throw new Error(
 					`Could not reach mock-exam MCP server at ${MCP_SERVER_URL}. ` +
 						`Start it with "python server.py" inside mcp-server/, then retry. ` +
 						`Original error: ${(err as Error).message}`,
 				);
+			} finally {
+				clearTimeout(timer);
+				connecting = undefined;
 			}
 			client = c;
-			connecting = undefined;
 			return c;
 		})();
 
 		return connecting;
 	}
 
+	/** Drops the cached connection so the next call reconnects (e.g. after the server restarted). */
+	async function resetClient() {
+		const stale = client;
+		client = undefined;
+		await stale?.close().catch(() => {});
+	}
+
+	async function callRandomQuestion(signal?: AbortSignal) {
+		const c = await getClient({ timeoutMs: 5000 });
+		return c.callTool({ name: "get_random_question", arguments: {} }, undefined, { signal });
+	}
+
 	const STATUS_KEY = "mock-exam-mcp";
 
 	async function checkConnectivity(ctx: { ui: { setStatus: (key: string, text: string | undefined) => void; notify: (msg: string, level: "info" | "warning" | "error") => void } }, opts?: { announceSuccess?: boolean }) {
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), 3000);
 		try {
-			await getClient({ signal: controller.signal });
-			clearTimeout(timer);
+			const c = await getClient({ timeoutMs: 3000 });
+			try {
+				await c.ping();
+			} catch {
+				// Cached connection is stale (server restarted); reconnect once.
+				await resetClient();
+				await (await getClient({ timeoutMs: 3000 })).ping();
+			}
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 			if (opts?.announceSuccess) {
 				ctx.ui.notify(`Connected to mock-exam MCP server at ${MCP_SERVER_URL}`, "info");
 			}
 			return true;
 		} catch (err) {
-			clearTimeout(timer);
+			await resetClient();
 			ctx.ui.setStatus(STATUS_KEY, "⚠ mock-exam MCP offline");
 			ctx.ui.notify((err as Error).message, "warning");
 			return false;
@@ -95,12 +126,15 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Fetch a random mock-exam practice question to quiz the user",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, signal) {
-			const c = await getClient();
-			const result = await c.callTool(
-				{ name: "get_random_question", arguments: {} },
-				undefined,
-				{ signal },
-			);
+			let result;
+			try {
+				result = await callRandomQuestion(signal);
+			} catch (err) {
+				if (signal?.aborted) throw err;
+				// The cached connection may be dead (server restarted). Reconnect once and retry.
+				await resetClient();
+				result = await callRandomQuestion(signal);
+			}
 
 			if (result.isError) {
 				const message = result.content
