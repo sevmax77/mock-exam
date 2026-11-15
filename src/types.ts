@@ -31,6 +31,8 @@ export type Attempt = {
   correctCount: number;
   wrongCount: number;
   results: QuestionResult[];
+  /** True when an exam was submitted automatically because its time limit ran out. */
+  timedOut?: boolean;
 };
 
 export type SavedExamState = {
@@ -42,4 +44,6 @@ export type SavedExamState = {
   selections: Record<string, string[]>;
   submittedQuestionIds: string[];
   flaggedQuestionIds: string[];
+  /** ISO time when a timed exam is submitted automatically. Absent when untimed. */
+  deadline?: string;
 };

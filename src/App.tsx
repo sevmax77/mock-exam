@@ -9,6 +9,7 @@ import { ResultsView } from './components/ResultsView';
 import { ReviewView } from './components/ReviewView';
 import { SettingsView } from './components/SettingsView';
 import { useAskAi } from './hooks/useAskAi';
+import { useCountdown } from './hooks/useCountdown';
 import { useOfflineStatus } from './hooks/useOfflineStatus';
 import { usePersistentState } from './hooks/usePersistentState';
 import { useSession } from './hooks/useSession';
@@ -37,12 +38,14 @@ import {
   type QuestionFormState,
 } from './lib/questionForm';
 import {
-  DEFAULT_EXAM_SETTINGS,
   MAX_SAVED_ATTEMPTS,
   buildAttempt,
   countAnswered,
   createSession,
+  getMistakeQuestionIds,
   getScoredQuestionIds,
+  getWrongQuestionIds,
+  normalizeExamSettings,
   type ExamSettings,
 } from './lib/session';
 import {
@@ -84,7 +87,7 @@ function App() {
   );
   const [examSettings, setExamSettings] = usePersistentState<ExamSettings>(
     EXAM_SETTINGS_KEY,
-    () => ({ ...DEFAULT_EXAM_SETTINGS, ...loadJson<Partial<ExamSettings>>(EXAM_SETTINGS_KEY, {}) }),
+    () => normalizeExamSettings(loadJson<Partial<ExamSettings> | null>(EXAM_SETTINGS_KEY, null)),
     { onSaveError: reportStorageError },
   );
   const [attempts, setAttempts] = usePersistentState<Attempt[]>(
@@ -120,14 +123,27 @@ function App() {
   const currentQuestion = currentQuestionId ? questionById.get(currentQuestionId) : undefined;
   const selectedIds = currentQuestionId ? (session?.selections[currentQuestionId] ?? []) : [];
   const answeredCount = session ? countAnswered(session) : 0;
+  const mistakeIds = useMemo(
+    () => getMistakeQuestionIds(attempts, questionById),
+    [attempts, questionById],
+  );
 
   const openSettings = (returnTo: Screen) => {
     setSettingsReturnScreen(returnTo);
     setScreen('settings');
   };
 
-  const startSession = (mode: SessionMode) => {
-    if (!questionBank.length) {
+  /**
+   * Starts a session over the whole bank (sized by the settings), or over `questionIds` only, for
+   * example to retry wrong answers. A session over chosen questions is never sampled or timed.
+   */
+  const startSession = (mode: SessionMode, questionIds?: string[]) => {
+    const chosen = questionIds ? new Set(questionIds) : null;
+    const questions = chosen
+      ? questionBank.filter((question) => chosen.has(question.id))
+      : questionBank;
+
+    if (!questions.length) {
       window.alert('Add at least one question before starting a session.');
       return;
     }
@@ -136,13 +152,16 @@ function App() {
       return;
     }
 
-    dispatchSession({ type: 'start', session: createSession(mode, questionBank, examSettings) });
+    const settings = chosen
+      ? { ...examSettings, questionCount: 0, timeLimitMinutes: 0 }
+      : examSettings;
+    dispatchSession({ type: 'start', session: createSession(mode, questions, settings) });
     setLatestAttempt(null);
     setScreen('session');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const endSession = () => {
+  const endSession = ({ timedOut = false } = {}) => {
     if (!session) {
       return;
     }
@@ -150,7 +169,7 @@ function App() {
     // Practice can be finished early: only submitted questions are scored.
     const scoredIds = getScoredQuestionIds(session);
 
-    if (session.mode === 'practice') {
+    if (session.mode === 'practice' && !timedOut) {
       if (!scoredIds.length) {
         window.alert('Submit at least one answer before finishing.');
         return;
@@ -167,13 +186,20 @@ function App() {
       }
     }
 
-    const attempt = buildAttempt(session, questionById, scoredIds);
+    const attempt = buildAttempt(session, questionById, scoredIds, new Date(), timedOut);
     setAttempts((current) => [attempt, ...current].slice(0, MAX_SAVED_ATTEMPTS));
     setLatestAttempt(attempt);
     dispatchSession({ type: 'clear' });
-    setScreen('results');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // A timed exam can run out while the user is editing questions or settings; don't pull
+    // them away from that. The attempt is still saved to history.
+    if (!timedOut || ['home', 'session', 'review', 'results'].includes(screen)) {
+      setScreen('results');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
+
+  const remainingMs = useCountdown(session?.deadline, () => endSession({ timedOut: true }));
 
   const goToQuestion = (index: number) => {
     // QuestionView scrolls itself to the top whenever the shown question changes.
@@ -380,8 +406,11 @@ function App() {
             answeredCount={answeredCount}
             attempts={attempts}
             questionById={questionById}
+            examSettings={examSettings}
+            mistakeCount={mistakeIds.length}
             onContinue={() => setScreen('session')}
-            onStart={startSession}
+            onStart={(mode) => startSession(mode)}
+            onPracticeMistakes={() => startSession('practice', mistakeIds)}
             onOpenBank={() => setScreen('bank')}
             onOpenSettings={() => openSettings('home')}
             onClearHistory={clearHistory}
@@ -402,6 +431,7 @@ function App() {
           isFlagged={session.flaggedQuestionIds.includes(currentQuestion.id)}
           answeredCount={answeredCount}
           submittedCount={session.submittedQuestionIds.length}
+          remainingMs={remainingMs}
           onSelect={(optionId) =>
             dispatchSession({ type: 'select', question: currentQuestion, optionId })
           }
@@ -410,7 +440,7 @@ function App() {
           onToggleFlag={() => dispatchSession({ type: 'toggleFlag', questionId: currentQuestion.id })}
           onReview={() => setScreen('review')}
           onSubmitPractice={() => dispatchSession({ type: 'submit', questionId: currentQuestion.id })}
-          onFinishPractice={endSession}
+          onFinishPractice={() => endSession()}
           onDiscard={resetCurrentSession}
           onMenu={() => setScreen('home')}
         />
@@ -421,9 +451,10 @@ function App() {
           session={session}
           questionById={questionById}
           answeredCount={answeredCount}
+          remainingMs={remainingMs}
           onGoToQuestion={goToQuestion}
           onBack={() => setScreen('session')}
-          onSubmit={endSession}
+          onSubmit={() => endSession()}
         />
       )}
 
@@ -431,9 +462,13 @@ function App() {
         <ResultsView
           attempt={latestAttempt}
           questionById={questionById}
+          retryCount={getWrongQuestionIds(latestAttempt, questionById).length}
           onHome={() => setScreen('home')}
           onNewExam={() => startSession('exam')}
           onNewPractice={() => startSession('practice')}
+          onRetryWrong={() =>
+            startSession('practice', getWrongQuestionIds(latestAttempt, questionById))
+          }
         />
       )}
 

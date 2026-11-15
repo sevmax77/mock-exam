@@ -1,10 +1,12 @@
 import type { Question, SavedExamState } from '../types';
 import { truncate } from '../lib/format';
+import { TimerBadge } from './TimerBadge';
 
 type ReviewViewProps = {
   session: SavedExamState;
   questionById: Map<string, Question>;
   answeredCount: number;
+  remainingMs: number | null;
   onGoToQuestion: (index: number) => void;
   onBack: () => void;
   onSubmit: () => void;
@@ -14,6 +16,7 @@ export function ReviewView({
   session,
   questionById,
   answeredCount,
+  remainingMs,
   onGoToQuestion,
   onBack,
   onSubmit,
@@ -28,9 +31,12 @@ export function ReviewView({
           <p className="eyebrow">Final review</p>
           <h2>Review before submission</h2>
         </div>
-        <button className="secondary-button" onClick={onBack}>
-          Back to exam
-        </button>
+        <div className="session-bar-actions">
+          <TimerBadge remainingMs={remainingMs} />
+          <button className="secondary-button" onClick={onBack}>
+            Back to exam
+          </button>
+        </div>
       </div>
 
       <div className="summary-grid">

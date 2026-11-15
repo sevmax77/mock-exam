@@ -6,17 +6,22 @@ import { OptionExplanationsPanel } from './OptionExplanationsPanel';
 type ResultsViewProps = {
   attempt: Attempt;
   questionById: Map<string, Question>;
+  /** Wrong answers of this attempt that can be retried (still in the bank). */
+  retryCount: number;
   onHome: () => void;
   onNewExam: () => void;
   onNewPractice: () => void;
+  onRetryWrong: () => void;
 };
 
 export function ResultsView({
   attempt,
   questionById,
+  retryCount,
   onHome,
   onNewExam,
   onNewPractice,
+  onRetryWrong,
 }: ResultsViewProps) {
   const percentage = scorePercentage(attempt);
 
@@ -47,8 +52,20 @@ export function ResultsView({
         </div>
       </div>
 
+      {attempt.timedOut && (
+        <p className="timed-out-note" role="status">
+          Time ran out, so the exam was submitted automatically. Unanswered questions count as
+          wrong.
+        </p>
+      )}
+
       <div className="result-actions">
-        <button className="primary-button" onClick={onNewExam}>
+        {retryCount > 0 && (
+          <button className="primary-button" onClick={onRetryWrong}>
+            Retry {retryCount} wrong {retryCount === 1 ? 'answer' : 'answers'}
+          </button>
+        )}
+        <button className={retryCount > 0 ? 'secondary-button' : 'primary-button'} onClick={onNewExam}>
           New exam
         </button>
         <button className="secondary-button" onClick={onNewPractice}>

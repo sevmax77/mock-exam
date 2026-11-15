@@ -1,6 +1,11 @@
 import { DEFAULT_AI_MODEL, type AiSettings } from '../lib/ai';
 import type { ExamSettings } from '../lib/session';
 
+function toWholeNumber(value: string): number {
+  const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 type SettingsViewProps = {
   examSettings: ExamSettings;
   aiSettings: AiSettings;
@@ -30,7 +35,7 @@ export function SettingsView({
 
       <div className="question-form">
         <div className="settings-section">
-          <h3>Session order</h3>
+          <h3>Sessions</h3>
           <p>
             These options apply to the next exam or practice session you start. When both are off,
             questions and answer options follow the same order as the question bank.
@@ -68,6 +73,48 @@ export function SettingsView({
               <strong>Shuffle answer options</strong>
               <small>Randomize A/B/C/D labels for each question in each new session.</small>
             </span>
+          </label>
+
+          <label className="form-field">
+            <span>Questions per session (0 = all)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={examSettings.questionCount}
+              onChange={(event) =>
+                onExamSettingsChange({
+                  ...examSettings,
+                  questionCount: toWholeNumber(event.target.value),
+                })
+              }
+            />
+            <small className="field-hint">
+              A smaller session picks that many questions from the bank at random.
+            </small>
+          </label>
+
+          <label className="form-field">
+            <span>Exam time limit in minutes (0 = no limit)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={examSettings.timeLimitMinutes}
+              onChange={(event) =>
+                onExamSettingsChange({
+                  ...examSettings,
+                  timeLimitMinutes: toWholeNumber(event.target.value),
+                })
+              }
+            />
+            <small className="field-hint">
+              Exam mode only. When time runs out, the exam is submitted automatically and
+              unanswered questions count as wrong. The clock keeps running if you leave the
+              session or close the app.
+            </small>
           </label>
         </div>
 
