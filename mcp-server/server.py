@@ -34,19 +34,24 @@ SERVER_DIR = Path(__file__).parent
 def resolve_data_file() -> Path:
     """Pick the question bank to serve.
 
-    1. MOCK_EXAM_QUESTIONS env var, if set.
-    2. The web app's bank (../src/data/questions.json), so both stay in sync.
-    3. The local copy next to this file, for running the server on its own.
+    The web app's bank (../src/data/questions.json) is the only copy, so the
+    app and this server always serve the same questions. Set the
+    MOCK_EXAM_QUESTIONS env var to serve a different file.
     """
     override = os.environ.get("MOCK_EXAM_QUESTIONS")
-    if override:
-        return Path(override).expanduser().resolve()
+    path = (
+        Path(override).expanduser().resolve()
+        if override
+        else SERVER_DIR.parent / "src" / "data" / "questions.json"
+    )
 
-    app_bank = SERVER_DIR.parent / "src" / "data" / "questions.json"
-    if app_bank.exists():
-        return app_bank
+    if not path.is_file():
+        raise RuntimeError(
+            f"Question bank not found: {path}. "
+            "Run the server from the mock-exam repo or set MOCK_EXAM_QUESTIONS."
+        )
 
-    return SERVER_DIR / "questions.json"
+    return path
 
 
 def validate_questions(questions: Any, source: Path) -> list[dict[str, Any]]:

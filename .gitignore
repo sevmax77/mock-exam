@@ -6,4 +6,3 @@ dist
 .cert
 
 src/data/questions.json
-mcp-server/questions.json

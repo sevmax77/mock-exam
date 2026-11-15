@@ -6,12 +6,11 @@ returns a full multiple-choice practice question — question text, all
 answer options, the correct option id(s), a per-option explanation, and an
 overall summary — picked at random from `questions.json`.
 
-This is a standalone project, separate from the Vite app in the repo root.
-It serves the first question bank it finds:
-
-1. the file named by the `MOCK_EXAM_QUESTIONS` environment variable, if set;
-2. the web app's bank, `../src/data/questions.json`, so the two never drift apart;
-3. `questions.json` next to `server.py`, for running the server outside this repo.
+This is a standalone project, separate from the Vite app in the repo root,
+but it has no question bank of its own. It serves the web app's bank,
+`../src/data/questions.json`, so the app and the server always have the same
+questions. To serve a different file, set the `MOCK_EXAM_QUESTIONS`
+environment variable to its path.
 
 The bank is validated at startup, and the server refuses to start if a question
 is malformed (for example, a correct answer that isn't one of the options).
