@@ -20,7 +20,10 @@ describe('normalizeImportedQuestion', () => {
     const question = normalizeImportedQuestion(
       {
         question: 'Q?',
-        options: [{ id: 'a', text: 'one' }, { text: 'two', explanation: 'no' }],
+        options: [
+          { id: 'a', text: 'one' },
+          { text: 'two', explanation: 'no' },
+        ],
         correctOptionIds: ['a'],
       },
       4,

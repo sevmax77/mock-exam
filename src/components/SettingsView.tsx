@@ -117,9 +117,9 @@ export function SettingsView({
               }
             />
             <small className="field-hint">
-              Exam mode only. When time runs out, the exam is submitted automatically and
-              unanswered questions count as wrong. The clock keeps running if you leave the
-              session or close the app.
+              Exam mode only. When time runs out, the exam is submitted automatically and unanswered
+              questions count as wrong. The clock keeps running if you leave the session or close
+              the app.
             </small>
           </label>
         </div>
@@ -145,9 +145,7 @@ export function SettingsView({
             <input
               type="text"
               value={aiSettings.model}
-              onChange={(event) =>
-                onAiSettingsChange({ ...aiSettings, model: event.target.value })
-              }
+              onChange={(event) => onAiSettingsChange({ ...aiSettings, model: event.target.value })}
               placeholder={DEFAULT_AI_MODEL}
             />
           </label>
@@ -202,13 +200,13 @@ export function SettingsView({
             <p>
               Ask AI reviews each question as an item of {examLabel(aiSettings)}. It returns
               recommended correct option IDs, confidence, notes, per-option explanations, and an
-              optional summary. In the question editor the result is only applied after you
-              preview it and choose an action. The question bank can also fill missing
-              explanations for many questions at once, without changing any answers.
+              optional summary. In the question editor the result is only applied after you preview
+              it and choose an action. The question bank can also fill missing explanations for many
+              questions at once, without changing any answers.
             </p>
             <p>
-              Your API key is stored only in this browser using localStorage. Do not use this
-              setup for a public app.
+              Your API key is stored only in this browser using localStorage. Do not use this setup
+              for a public app.
             </p>
           </div>
         </div>

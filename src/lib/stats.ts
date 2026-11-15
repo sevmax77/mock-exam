@@ -87,10 +87,7 @@ export function weakness(stat: QuestionStats | undefined): number {
  * Bank questions sorted weakest first. Ties go to the question practiced least recently
  * (unanswered first), then to bank order.
  */
-export function sortByWeakness(
-  bank: Question[],
-  stats: Map<string, QuestionStats>,
-): Question[] {
+export function sortByWeakness(bank: Question[], stats: Map<string, QuestionStats>): Question[] {
   return bank
     .map((question, index) => ({ question, index, stat: stats.get(question.id) }))
     .sort(

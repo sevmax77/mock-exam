@@ -23,11 +23,17 @@ function isTypingTarget(target: EventTarget | null): boolean {
     return false;
   }
 
-  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+  if (
+    target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
     return true;
   }
 
-  return target instanceof HTMLInputElement && target.type !== 'radio' && target.type !== 'checkbox';
+  return (
+    target instanceof HTMLInputElement && target.type !== 'radio' && target.type !== 'checkbox'
+  );
 }
 
 type QuestionViewProps = {
@@ -94,7 +100,13 @@ export function QuestionView({
 
   // Desktop shortcuts: 1-9 select, left/right move, F flags, Enter submits or moves on.
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) {
+    if (
+      event.repeat ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      isTypingTarget(event.target)
+    ) {
       return;
     }
 
@@ -165,7 +177,9 @@ export function QuestionView({
 
       <div className="question-meta">
         <span>{isMultiAnswer ? `Choose ${question.correctOptionIds.length}` : 'Choose one'}</span>
-        <span>{session.mode === 'exam' ? `${answeredCount} answered` : `${submittedCount} submitted`}</span>
+        <span>
+          {session.mode === 'exam' ? `${answeredCount} answered` : `${submittedCount} submitted`}
+        </span>
         {isFlagged && <span className="flag-label">Flagged</span>}
       </div>
 
@@ -218,8 +232,7 @@ export function QuestionView({
         >
           <h3>{isCorrect ? 'Correct' : 'Incorrect'}</h3>
           <p>
-            Correct answer:{' '}
-            <strong>{displayAnswer(question.correctOptionIds, optionOrder)}</strong>
+            Correct answer: <strong>{displayAnswer(question.correctOptionIds, optionOrder)}</strong>
           </p>
           <OptionExplanationsPanel question={question} orderedOptions={orderedOptions} />
         </div>

@@ -95,7 +95,9 @@ export function HomeView({
           <button className="mode-card" onClick={onPracticeMistakes}>
             <span>Practice mistakes</span>
             <strong>{plural(mistakeCount, 'question')} to review</strong>
-            <small>Questions you got wrong the last time you answered them, in practice mode.</small>
+            <small>
+              Questions you got wrong the last time you answered them, in practice mode.
+            </small>
           </button>
         )}
         {flaggedCount > 0 && (
@@ -122,7 +124,9 @@ export function HomeView({
         <button className="mode-card" onClick={onOpenSettings}>
           <span>Settings</span>
           <strong>Session size, timer, Ask AI</strong>
-          <small>Control question count, exam time limit, shuffling, and OpenRouter configuration.</small>
+          <small>
+            Control question count, exam time limit, shuffling, and OpenRouter configuration.
+          </small>
         </button>
       </section>
 

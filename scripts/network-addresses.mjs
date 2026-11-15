@@ -88,9 +88,7 @@ export function printIphoneUrlHelp(port = 4173) {
           : candidate.hotspot
             ? 'hotspot only'
             : 'alternate';
-    console.log(
-      `  https://${candidate.ip}:${port}  [${marker}] ${describeCandidate(candidate)}`,
-    );
+    console.log(`  https://${candidate.ip}:${port}  [${marker}] ${describeCandidate(candidate)}`);
   }
 
   console.log('');

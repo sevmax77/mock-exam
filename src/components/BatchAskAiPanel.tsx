@@ -69,7 +69,9 @@ export function BatchAskAiPanel({
             aria-valuemax={batch.total}
             aria-valuenow={outcomes.length}
           >
-            <span style={{ width: `${batch.total ? (outcomes.length / batch.total) * 100 : 0}%` }} />
+            <span
+              style={{ width: `${batch.total ? (outcomes.length / batch.total) * 100 : 0}%` }}
+            />
           </div>
 
           <p className="ai-meta">

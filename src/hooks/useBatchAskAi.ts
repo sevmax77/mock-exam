@@ -46,7 +46,9 @@ export function useBatchAskAi() {
             onAgreed(outcome.questionId, outcome.review);
           }
 
-          setState((current) => current && { ...current, outcomes: [...current.outcomes, outcome] });
+          setState(
+            (current) => current && { ...current, outcomes: [...current.outcomes, outcome] },
+          );
         },
       },
     );

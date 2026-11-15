@@ -9,7 +9,11 @@ export default defineConfig([
   globalIgnores(['dist', 'dev-dist', 'node_modules', 'mcp-server', '.pi']),
   {
     files: ['src/**/*.{ts,tsx}'],
-    extends: [js.configs.recommended, tseslint.configs.recommended, reactHooks.configs.flat.recommended],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs.flat.recommended,
+    ],
     languageOptions: {
       globals: globals.browser,
     },

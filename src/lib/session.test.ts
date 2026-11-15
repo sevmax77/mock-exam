@@ -36,7 +36,11 @@ describe('createSession', () => {
       mode: 'practice',
       startedAt: '2026-02-03T04:05:06.000Z',
       questionOrder: ['q1', 'q2', 'q3'],
-      optionOrders: { q1: ['A', 'B', 'C', 'D'], q2: ['A', 'B', 'C', 'D'], q3: ['A', 'B', 'C', 'D'] },
+      optionOrders: {
+        q1: ['A', 'B', 'C', 'D'],
+        q2: ['A', 'B', 'C', 'D'],
+        q3: ['A', 'B', 'C', 'D'],
+      },
       currentIndex: 0,
       selections: {},
       submittedQuestionIds: [],
@@ -64,8 +68,12 @@ describe('createSession', () => {
   });
 
   it('uses the whole bank when the count is 0 or larger than the bank', () => {
-    expect(createSession('exam', bank, { ...inOrder, questionCount: 0 }).questionOrder).toHaveLength(3);
-    expect(createSession('exam', bank, { ...inOrder, questionCount: 50 }).questionOrder).toHaveLength(3);
+    expect(
+      createSession('exam', bank, { ...inOrder, questionCount: 0 }).questionOrder,
+    ).toHaveLength(3);
+    expect(
+      createSession('exam', bank, { ...inOrder, questionCount: 50 }).questionOrder,
+    ).toHaveLength(3);
   });
 
   it('sets a deadline for timed exams only', () => {
@@ -163,7 +171,11 @@ describe('reconcileSession', () => {
 
   it('drops deleted options and appends new ones, keeping the shown order', () => {
     const saved = session({
-      optionOrders: { q1: ['D', 'C', 'B', 'A'], q2: ['A', 'B', 'C', 'D'], q3: ['A', 'B', 'C', 'D'] },
+      optionOrders: {
+        q1: ['D', 'C', 'B', 'A'],
+        q2: ['A', 'B', 'C', 'D'],
+        q3: ['A', 'B', 'C', 'D'],
+      },
       selections: { q1: ['C'] },
     });
     const edited = {
@@ -224,7 +236,11 @@ describe('sessionReducer', () => {
     const empty = session({ mode: 'practice' });
     expect(sessionReducer(empty, { type: 'submit', questionId: 'q1' })).toBe(empty);
 
-    const once = session({ mode: 'practice', selections: { q1: ['A'] }, submittedQuestionIds: ['q1'] });
+    const once = session({
+      mode: 'practice',
+      selections: { q1: ['A'] },
+      submittedQuestionIds: ['q1'],
+    });
     expect(sessionReducer(once, { type: 'submit', questionId: 'q1' })).toBe(once);
   });
 
@@ -241,7 +257,9 @@ describe('sessionReducer', () => {
   it('toggles flags', () => {
     const flagged = sessionReducer(session(), { type: 'toggleFlag', questionId: 'q2' });
     expect(flagged?.flaggedQuestionIds).toEqual(['q2']);
-    expect(sessionReducer(flagged, { type: 'toggleFlag', questionId: 'q2' })?.flaggedQuestionIds).toEqual([]);
+    expect(
+      sessionReducer(flagged, { type: 'toggleFlag', questionId: 'q2' })?.flaggedQuestionIds,
+    ).toEqual([]);
   });
 
   it('reconciles against a new bank', () => {

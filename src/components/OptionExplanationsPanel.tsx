@@ -6,7 +6,10 @@ type OptionExplanationsPanelProps = {
   orderedOptions: QuestionOption[];
 };
 
-export function OptionExplanationsPanel({ question, orderedOptions }: OptionExplanationsPanelProps) {
+export function OptionExplanationsPanel({
+  question,
+  orderedOptions,
+}: OptionExplanationsPanelProps) {
   const correctSet = new Set(question.correctOptionIds);
 
   return (

@@ -8,7 +8,11 @@ import {
 } from '../lib/ai';
 import { displayLabel } from '../lib/format';
 import { getQuestionWarnings } from '../lib/questionBank';
-import { formToQuestion, type ApplyAiReviewMode, type QuestionFormState } from '../lib/questionForm';
+import {
+  formToQuestion,
+  type ApplyAiReviewMode,
+  type QuestionFormState,
+} from '../lib/questionForm';
 
 type QuestionFormViewProps = {
   form: QuestionFormState;
@@ -216,8 +220,8 @@ export function QuestionFormView({
             <div>
               <h3>Ask AI</h3>
               <p>
-                Send this question to OpenRouter for an answer review with per-option
-                explanations, as an item of {examLabel(aiSettings)}.
+                Send this question to OpenRouter for an answer review with per-option explanations,
+                as an item of {examLabel(aiSettings)}.
               </p>
             </div>
             <button className="secondary-button" onClick={onOpenAiSettings}>
