@@ -158,11 +158,16 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 | `npm run import:pdf` | Extracts questions from the PDF in `src/data/` into `src/data/questions.imported.json` (legacy format). Never overwrites an existing file unless you pass `-- --force`. |
 | `npm run migrate:explanations -- <input.json>` | Converts legacy questions to per-option explanations, writing `<input>.migrated.json`. |
 | `npm run generate:icons` | Regenerates the PNG app icons in `public/` from `public/favicon.svg`. |
+| `npm test` | Runs the unit tests and the `questions.json` checks with Vitest. |
+| `npm run lint` | Runs ESLint. |
 
 ## Features
 
 - Exam mode: answer all questions, flag items, review status, then submit final answers.
 - Practice mode: submit one question at a time and immediately see the correct answer and explanation.
-- Questions and answer options are shuffled for every new session.
+- Questions and answer options are shuffled for every new session (both can be turned off in Settings).
+- Session size: run the whole bank or a set number of random questions.
+- Exam timer: an optional time limit for exam mode. When it runs out, the exam is submitted automatically.
+- Retry wrong answers from a finished attempt, or practice every question you got wrong the last time you answered it.
 - Current session and completed attempts are saved locally in `localStorage`.
-- Long questions and options are formatted for comfortable reading on mobile.
+- Long questions and options are formatted for comfortable reading on mobile, with a dark theme that follows the device setting.

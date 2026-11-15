@@ -3,6 +3,7 @@ import type { Question, QuestionOption, SavedExamState } from '../types';
 import { displayLabel } from '../lib/format';
 import { displayAnswer, sameAnswer } from '../lib/scoring';
 import { OptionExplanationsPanel } from './OptionExplanationsPanel';
+import { TimerBadge } from './TimerBadge';
 
 function scrollSessionToTop(anchor?: HTMLElement | null) {
   const scrollToTop = () => {
@@ -25,6 +26,7 @@ type QuestionViewProps = {
   isFlagged: boolean;
   answeredCount: number;
   submittedCount: number;
+  remainingMs: number | null;
   onSelect: (optionId: string) => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -45,6 +47,7 @@ export function QuestionView({
   isFlagged,
   answeredCount,
   submittedCount,
+  remainingMs,
   onSelect,
   onNext,
   onPrevious,
@@ -82,6 +85,7 @@ export function QuestionView({
           </h2>
         </div>
         <div className="session-bar-actions">
+          <TimerBadge remainingMs={remainingMs} />
           <button className="secondary-button" onClick={onMenu}>
             Menu
           </button>

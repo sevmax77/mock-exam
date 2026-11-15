@@ -1,25 +1,53 @@
 import type { Attempt, Question, SavedExamState, SessionMode } from '../types';
 import { getScore } from './scoring';
-import { orderItems } from './shuffle';
+import { orderItems, shuffle } from './shuffle';
 
 export const MAX_SAVED_ATTEMPTS = 20;
 
 export type ExamSettings = {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
+  /** Questions per session, picked at random. 0 means the whole bank. */
+  questionCount: number;
+  /** Exam mode time limit in minutes. 0 means untimed. Practice is never timed. */
+  timeLimitMinutes: number;
 };
 
 export const DEFAULT_EXAM_SETTINGS: ExamSettings = {
   shuffleQuestions: true,
   shuffleOptions: true,
+  questionCount: 0,
+  timeLimitMinutes: 0,
 };
+
+/** Fills in defaults and repairs invalid numbers in settings loaded from storage. */
+export function normalizeExamSettings(stored: Partial<ExamSettings> | null): ExamSettings {
+  const settings = { ...DEFAULT_EXAM_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+  const wholeNumber = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+  return {
+    shuffleQuestions: settings.shuffleQuestions !== false,
+    shuffleOptions: settings.shuffleOptions !== false,
+    questionCount: wholeNumber(settings.questionCount),
+    timeLimitMinutes: wholeNumber(settings.timeLimitMinutes),
+  };
+}
 
 export function createSession(
   mode: SessionMode,
-  questions: Question[],
+  bank: Question[],
   examSettings: ExamSettings,
   now: Date = new Date(),
 ): SavedExamState {
+  // A smaller session is a random sample; it keeps bank order unless questions are shuffled.
+  const { questionCount, timeLimitMinutes } = examSettings;
+  const sampledIds =
+    questionCount > 0 && questionCount < bank.length
+      ? new Set(shuffle(bank.map((question) => question.id)).slice(0, questionCount))
+      : null;
+  const questions = sampledIds ? bank.filter((question) => sampledIds.has(question.id)) : bank;
+
   const questionOrder = orderItems(
     questions.map((question) => question.id),
     examSettings.shuffleQuestions,
@@ -43,7 +71,44 @@ export function createSession(
     selections: {},
     submittedQuestionIds: [],
     flaggedQuestionIds: [],
+    ...(mode === 'exam' && timeLimitMinutes > 0
+      ? { deadline: new Date(now.getTime() + timeLimitMinutes * 60_000).toISOString() }
+      : {}),
   };
+}
+
+/**
+ * Questions whose most recent result in the saved history was wrong, most recent first.
+ * Questions answered correctly in a later attempt, or deleted from the bank, are left out.
+ */
+export function getMistakeQuestionIds(
+  attempts: Attempt[],
+  questionById: Map<string, Question>,
+): string[] {
+  const latestResult = new Map<string, boolean>();
+
+  // Attempts are stored newest first, so the first result seen for a question is its latest.
+  for (const attempt of attempts) {
+    for (const result of attempt.results ?? []) {
+      if (!latestResult.has(result.questionId)) {
+        latestResult.set(result.questionId, result.isCorrect);
+      }
+    }
+  }
+
+  return [...latestResult]
+    .filter(([questionId, isCorrect]) => !isCorrect && questionById.has(questionId))
+    .map(([questionId]) => questionId);
+}
+
+/** Wrong answers of one attempt that still exist in the bank. */
+export function getWrongQuestionIds(
+  attempt: Attempt,
+  questionById: Map<string, Question>,
+): string[] {
+  return attempt.results
+    .filter((result) => !result.isCorrect && questionById.has(result.questionId))
+    .map((result) => result.questionId);
 }
 
 /**
@@ -203,6 +268,7 @@ export function buildAttempt(
   questionById: Map<string, Question>,
   scoredIds: string[],
   now: Date = new Date(),
+  timedOut = false,
 ): Attempt {
   const score = getScore(session, questionById, scoredIds);
 
@@ -215,6 +281,7 @@ export function buildAttempt(
     correctCount: score.correctCount,
     wrongCount: score.wrongCount,
     results: score.results,
+    ...(timedOut ? { timedOut: true } : {}),
   };
 }
 

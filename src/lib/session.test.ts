@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { SavedExamState } from '../types';
 import { makeQuestion } from '../test/fixtures';
 import { buildQuestionMap } from './questionBank';
+import type { Attempt } from '../types';
 import {
+  DEFAULT_EXAM_SETTINGS,
   buildAttempt,
   countAnswered,
   createSession,
+  getMistakeQuestionIds,
   getScoredQuestionIds,
+  getWrongQuestionIds,
+  normalizeExamSettings,
   reconcileSession,
   sessionReducer,
 } from './session';
@@ -15,22 +20,18 @@ const single = makeQuestion('q1', ['B']);
 const multi = makeQuestion('q2', ['A', 'C']);
 const third = makeQuestion('q3', ['D']);
 const bank = [single, multi, third];
+const inOrder = { ...DEFAULT_EXAM_SETTINGS, shuffleQuestions: false, shuffleOptions: false };
 
 function session(overrides: Partial<SavedExamState> = {}): SavedExamState {
   return {
-    ...createSession('exam', bank, { shuffleQuestions: false, shuffleOptions: false }),
+    ...createSession('exam', bank, inOrder),
     ...overrides,
   };
 }
 
 describe('createSession', () => {
   it('keeps bank order when shuffling is off', () => {
-    const created = createSession(
-      'practice',
-      bank,
-      { shuffleQuestions: false, shuffleOptions: false },
-      new Date('2026-02-03T04:05:06Z'),
-    );
+    const created = createSession('practice', bank, inOrder, new Date('2026-02-03T04:05:06Z'));
     expect(created).toEqual({
       mode: 'practice',
       startedAt: '2026-02-03T04:05:06.000Z',
@@ -44,11 +45,92 @@ describe('createSession', () => {
   });
 
   it('shuffles into a permutation of the same ids', () => {
-    const created = createSession('exam', bank, { shuffleQuestions: true, shuffleOptions: true });
+    const created = createSession('exam', bank, DEFAULT_EXAM_SETTINGS);
     expect([...created.questionOrder].sort()).toEqual(['q1', 'q2', 'q3']);
     for (const order of Object.values(created.optionOrders)) {
       expect([...order].sort()).toEqual(['A', 'B', 'C', 'D']);
     }
+  });
+
+  it('samples the requested number of questions, keeping bank order when not shuffled', () => {
+    const big = Array.from({ length: 20 }, (_, index) => makeQuestion(`q${index + 1}`));
+    const created = createSession('exam', big, { ...inOrder, questionCount: 5 });
+
+    expect(created.questionOrder).toHaveLength(5);
+    expect(new Set(created.questionOrder).size).toBe(5);
+    const positions = created.questionOrder.map((id) => Number(id.slice(1)));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(Object.keys(created.optionOrders).sort()).toEqual([...created.questionOrder].sort());
+  });
+
+  it('uses the whole bank when the count is 0 or larger than the bank', () => {
+    expect(createSession('exam', bank, { ...inOrder, questionCount: 0 }).questionOrder).toHaveLength(3);
+    expect(createSession('exam', bank, { ...inOrder, questionCount: 50 }).questionOrder).toHaveLength(3);
+  });
+
+  it('sets a deadline for timed exams only', () => {
+    const now = new Date('2026-02-03T10:00:00Z');
+    const timed = { ...inOrder, timeLimitMinutes: 90 };
+
+    expect(createSession('exam', bank, timed, now).deadline).toBe('2026-02-03T11:30:00.000Z');
+    expect(createSession('practice', bank, timed, now)).not.toHaveProperty('deadline');
+    expect(createSession('exam', bank, inOrder, now)).not.toHaveProperty('deadline');
+  });
+});
+
+describe('normalizeExamSettings', () => {
+  it('fills in defaults for settings saved by older versions', () => {
+    expect(normalizeExamSettings({ shuffleQuestions: false, shuffleOptions: true })).toEqual({
+      shuffleQuestions: false,
+      shuffleOptions: true,
+      questionCount: 0,
+      timeLimitMinutes: 0,
+    });
+    expect(normalizeExamSettings(null)).toEqual(DEFAULT_EXAM_SETTINGS);
+  });
+
+  it('repairs invalid numbers', () => {
+    const repaired = normalizeExamSettings({
+      questionCount: -3,
+      timeLimitMinutes: 12.7,
+    } as never);
+    expect(repaired.questionCount).toBe(0);
+    expect(repaired.timeLimitMinutes).toBe(12);
+    expect(normalizeExamSettings({ questionCount: 'x' } as never).questionCount).toBe(0);
+  });
+});
+
+describe('mistakes', () => {
+  const result = (questionId: string, isCorrect: boolean) => ({
+    questionId,
+    selectedOptionIds: [],
+    correctOptionIds: [],
+    isCorrect,
+  });
+  const attempt = (results: Attempt['results']): Attempt => ({
+    id: 'a',
+    mode: 'exam',
+    startedAt: '',
+    completedAt: '',
+    totalQuestions: results.length,
+    correctCount: 0,
+    wrongCount: 0,
+    results,
+  });
+
+  it('lists questions whose latest result was wrong, newest attempt first', () => {
+    const attempts = [
+      attempt([result('q2', true), result('q3', false)]),
+      attempt([result('q1', false), result('q2', false), result('q9', false)]),
+    ];
+
+    // q2 was fixed in the newer attempt; q9 is no longer in the bank.
+    expect(getMistakeQuestionIds(attempts, buildQuestionMap(bank))).toEqual(['q3', 'q1']);
+  });
+
+  it('lists the wrong answers of one attempt that still exist', () => {
+    const one = attempt([result('q1', false), result('q2', true), result('q9', false)]);
+    expect(getWrongQuestionIds(one, buildQuestionMap(bank))).toEqual(['q1']);
   });
 });
 
@@ -203,5 +285,16 @@ describe('scoring a finished session', () => {
       wrongCount: 1,
     });
     expect(countAnswered(finished)).toBe(2);
+    expect(attempt).not.toHaveProperty('timedOut');
+  });
+
+  it('marks attempts submitted by the timer', () => {
+    const attempt = buildAttempt(session(), buildQuestionMap(bank), ['q1'], new Date(), true);
+    expect(attempt.timedOut).toBe(true);
+  });
+
+  it('keeps the deadline when a session is reconciled', () => {
+    const timed = session({ deadline: '2026-03-01T10:00:00.000Z' });
+    expect(reconcileSession(timed, buildQuestionMap(bank))?.deadline).toBe(timed.deadline);
   });
 });
