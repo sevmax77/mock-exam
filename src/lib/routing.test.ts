@@ -10,7 +10,15 @@ import {
   type Screen,
 } from './routing';
 
-const screens: Screen[] = ['home', 'session', 'review', 'results', 'bank', 'question-form', 'settings'];
+const screens: Screen[] = [
+  'home',
+  'session',
+  'review',
+  'results',
+  'bank',
+  'question-form',
+  'settings',
+];
 
 describe('hashes', () => {
   it('round-trips every screen', () => {
@@ -60,7 +68,9 @@ describe('route state', () => {
 
 describe('initialScreen', () => {
   it('prefers the history entry, then the URL, then the fallback', () => {
-    expect(initialScreen({ screen: 'settings', stack: ['settings'] }, '#/bank', 'home')).toBe('settings');
+    expect(initialScreen({ screen: 'settings', stack: ['settings'] }, '#/bank', 'home')).toBe(
+      'settings',
+    );
     expect(initialScreen(null, '#/bank', 'session')).toBe('bank');
     expect(initialScreen(null, '#/unknown', 'session')).toBe('session');
   });

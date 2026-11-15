@@ -1,5 +1,10 @@
 import type { Question } from '../types';
-import { AI_REQUEST_TIMEOUT_MS, toPositionalQuestion, type AiReview, type AiReviewResult } from './ai';
+import {
+  AI_REQUEST_TIMEOUT_MS,
+  toPositionalQuestion,
+  type AiReview,
+  type AiReviewResult,
+} from './ai';
 import { displayLabel } from './format';
 import { PLACEHOLDER_CORRECT_EXPLANATION, PLACEHOLDER_INCORRECT_EXPLANATION } from './questionBank';
 import { snapshotOptions } from './questionForm';

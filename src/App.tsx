@@ -41,7 +41,12 @@ import {
   type ApplyAiReviewMode,
   type QuestionFormState,
 } from './lib/questionForm';
-import { createHistoryBackup, mergeAttempts, normalizeStoredAttempts, parseHistoryBackup } from './lib/history';
+import {
+  createHistoryBackup,
+  mergeAttempts,
+  normalizeStoredAttempts,
+  parseHistoryBackup,
+} from './lib/history';
 import {
   MAX_SAVED_ATTEMPTS,
   buildAttempt,
@@ -100,7 +105,8 @@ function App() {
   );
 
   const questionBank = storedBank.questions;
-  const bundledUpdateAvailable = storedBank.modified && storedBank.bundledHash !== BUNDLED_BANK.hash;
+  const bundledUpdateAvailable =
+    storedBank.modified && storedBank.bundledHash !== BUNDLED_BANK.hash;
   const questionById = useMemo(() => buildQuestionMap(questionBank), [questionBank]);
   const [session, dispatchSession] = useSession(questionById, reportStorageError);
 
@@ -462,7 +468,9 @@ function App() {
     const next = applyAiReviewToForm(questionForm, ai.review, mode, new Date().toLocaleString());
 
     if (!next) {
-      window.alert('The answer options changed after this AI review. Ask AI again before applying.');
+      window.alert(
+        'The answer options changed after this AI review. Ask AI again before applying.',
+      );
       return;
     }
 
@@ -476,8 +484,8 @@ function App() {
           <p className="eyebrow">Personal mock exam platform</p>
           <h1>Mock Exam</h1>
           <p className="hero-copy">
-            Practice shuffled multiple-choice questions, review before final submission, and
-            keep correct/wrong results on this device.
+            Practice shuffled multiple-choice questions, review before final submission, and keep
+            correct/wrong results on this device.
           </p>
         </div>
         <div className="hero-stat">
@@ -546,9 +554,13 @@ function App() {
           }
           onNext={() => dispatchSession({ type: 'move', direction: 1 })}
           onPrevious={() => dispatchSession({ type: 'move', direction: -1 })}
-          onToggleFlag={() => dispatchSession({ type: 'toggleFlag', questionId: currentQuestion.id })}
+          onToggleFlag={() =>
+            dispatchSession({ type: 'toggleFlag', questionId: currentQuestion.id })
+          }
           onReview={openReview}
-          onSubmitPractice={() => dispatchSession({ type: 'submit', questionId: currentQuestion.id })}
+          onSubmitPractice={() =>
+            dispatchSession({ type: 'submit', questionId: currentQuestion.id })
+          }
           onFinishPractice={() => endSession()}
           onDiscard={resetCurrentSession}
           onMenu={() => goBack('home')}

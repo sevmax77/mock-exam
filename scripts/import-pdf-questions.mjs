@@ -86,13 +86,16 @@ function joinExplanation(lines) {
       continue;
     }
 
-    if (/^(Thank you|Best of Luck|Feedback More Papers|Total:\s*\d+\s+Questions|Link:)/i.test(line)) {
+    if (
+      /^(Thank you|Best of Luck|Feedback More Papers|Total:\s*\d+\s+Questions|Link:)/i.test(line)
+    ) {
       break;
     }
 
-    const isHeading = /^(Justification|Solution justification|Technical justification|Selected Solution|Why\b|Conclusion\b|References\b|Result\b|Overall\b|Key AWS services involved|Resulting architecture)\b/i.test(
-      line,
-    );
+    const isHeading =
+      /^(Justification|Solution justification|Technical justification|Selected Solution|Why\b|Conclusion\b|References\b|Result\b|Overall\b|Key AWS services involved|Resulting architecture)\b/i.test(
+        line,
+      );
     const isOptionHeading =
       /^Option\s?[A-Z]\b/i.test(line) ||
       /^[A-Z]\s*[).–-]\s+/.test(line) ||
@@ -327,8 +330,9 @@ function parseQuestions(lines) {
     const options = parseOptions(lines.slice(optionAIndex, answerIndex));
     const correctOptionIds = parseAnswerIds(lines[answerIndex]);
 
-    const explanationStart =
-      /^Explanation:$/i.test(lines[answerIndex + 1] ?? '') ? answerIndex + 2 : answerIndex + 1;
+    const explanationStart = /^Explanation:$/i.test(lines[answerIndex + 1] ?? '')
+      ? answerIndex + 2
+      : answerIndex + 1;
     const nextAnswerIndex = findNextIndex(lines, explanationStart, isAnswerLine);
     let nextQuestionStart = lines.length;
 
@@ -385,7 +389,9 @@ function validateQuestions(questions, expectedQuestionCount) {
     }
 
     if (question.question && !/^[A-Z0-9]/.test(question.question)) {
-      errors.push(`${question.id}: question appears to start mid-sentence: ${question.question.slice(0, 120)}`);
+      errors.push(
+        `${question.id}: question appears to start mid-sentence: ${question.question.slice(0, 120)}`,
+      );
     }
 
     if (question.options.length < 2) {
@@ -403,7 +409,9 @@ function validateQuestions(questions, expectedQuestionCount) {
     }
 
     if (!question.explanation) {
-      errors.push(`${question.id}: missing explanation. Question starts: ${question.question.slice(0, 120)}`);
+      errors.push(
+        `${question.id}: missing explanation. Question starts: ${question.question.slice(0, 120)}`,
+      );
     }
 
     if (/PUBLISHER|--\s*\d+\s+of\s+\d+\s*--/i.test(JSON.stringify(question))) {

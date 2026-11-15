@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-export type OfflineInstallStatus = 'checking' | 'ready' | 'missing' | 'needs-https';
+/** `dev`: the dev server, which never registers the service worker, so there is nothing to report. */
+export type OfflineInstallStatus = 'checking' | 'ready' | 'missing' | 'needs-https' | 'dev';
 
 export function isStandaloneApp(): boolean {
   return (
@@ -15,6 +16,10 @@ export function isStandaloneApp(): boolean {
  * `readyNotice` turns on once caching finishes inside the installed app.
  */
 function initialStatus(): OfflineInstallStatus {
+  if (import.meta.env.DEV) {
+    return 'dev';
+  }
+
   if (!window.isSecureContext) {
     return 'needs-https';
   }

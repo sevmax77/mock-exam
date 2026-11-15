@@ -32,8 +32,7 @@ if (fs.existsSync(outputPath) && !force) {
 
 const SECTION_START =
   /^(?:why the other|why other|why the remaining|conclusion|references|solution justification|justification)\b/i;
-const BULLET_OPTION =
-  /^[-*•]\s*(?:Option\s*)?([A-F])\s*[:.)–—-]\s*(.*)$/i;
+const BULLET_OPTION = /^[-*•]\s*(?:Option\s*)?([A-F])\s*[:.)–—-]\s*(.*)$/i;
 const WHY_OPTION = /^Why\s+option\s+([A-F])\s+is\b(.*)$/i;
 const OPTION_LINE = /^Option\s*([A-F])\b[:.]?\s*(.*)$/i;
 
@@ -89,7 +88,7 @@ function splitExplanation(explanation, optionIds, correctOptionIds) {
   const lines = explanation.replace(/\r/g, '').split('\n');
   let section = 'body';
 
-  for (let index = 0; index < lines.length; ) {
+  for (let index = 0; index < lines.length;) {
     const line = lines[index].trim();
 
     if (!line) {
@@ -198,7 +197,10 @@ function splitExplanation(explanation, optionIds, correctOptionIds) {
     }
   }
 
-  const summary = summaryParts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  const summary = summaryParts
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return { extracted, summary };
 }
 
@@ -226,11 +228,7 @@ function migrateQuestion(question) {
     typeof question.explanation === 'string' ? question.explanation.trim() : '';
   const optionIds = question.options.map((option) => normalizeOptionId(option.id));
   const correctOptionIds = question.correctOptionIds.map(normalizeOptionId);
-  const { extracted, summary } = splitExplanation(
-    legacyExplanation,
-    optionIds,
-    correctOptionIds,
-  );
+  const { extracted, summary } = splitExplanation(legacyExplanation, optionIds, correctOptionIds);
 
   return {
     id: question.id,

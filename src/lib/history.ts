@@ -98,7 +98,11 @@ export function parseHistoryBackup(data: unknown): { attempts: Attempt[]; skippe
 
   if (Array.isArray(data)) {
     entries = data;
-  } else if (isRecord(data) && data.format === HISTORY_BACKUP_FORMAT && Array.isArray(data.attempts)) {
+  } else if (
+    isRecord(data) &&
+    data.format === HISTORY_BACKUP_FORMAT &&
+    Array.isArray(data.attempts)
+  ) {
     entries = data.attempts;
   } else {
     throw new Error('This file is not a Mock Exam history backup.');

@@ -1,11 +1,5 @@
 export type Screen =
-  | 'home'
-  | 'session'
-  | 'review'
-  | 'results'
-  | 'bank'
-  | 'question-form'
-  | 'settings';
+  'home' | 'session' | 'review' | 'results' | 'bank' | 'question-form' | 'settings';
 
 const PATHS: Record<Screen, string> = {
   home: '',

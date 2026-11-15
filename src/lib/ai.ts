@@ -106,7 +106,9 @@ export function parseAiJson(content: string, optionIds: string[]): AiReviewResul
     }
   } else if (Array.isArray(parsed.optionExplanations)) {
     for (const entry of parsed.optionExplanations) {
-      const optionId = String(entry.id ?? '').trim().toUpperCase();
+      const optionId = String(entry.id ?? '')
+        .trim()
+        .toUpperCase();
       if (optionIds.includes(optionId) && typeof entry.explanation === 'string') {
         optionExplanations[optionId] = entry.explanation.trim();
       }
@@ -136,9 +138,7 @@ export function parseAiJson(content: string, optionIds: string[]): AiReviewResul
 }
 
 export function buildAiPrompt(question: Question, examName: string = DEFAULT_EXAM_NAME): string {
-  const options = question.options
-    .map((option) => `${option.id}. ${option.text}`)
-    .join('\n');
+  const options = question.options.map((option) => `${option.id}. ${option.text}`).join('\n');
   const existingExplanations = question.options
     .map((option) => `${option.id}: ${option.explanation || '(empty)'}`)
     .join('\n');

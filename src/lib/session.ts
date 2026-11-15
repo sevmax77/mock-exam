@@ -26,7 +26,10 @@ export const DEFAULT_EXAM_SETTINGS: ExamSettings = {
 
 /** Fills in defaults and repairs invalid numbers in settings loaded from storage. */
 export function normalizeExamSettings(stored: Partial<ExamSettings> | null): ExamSettings {
-  const settings = { ...DEFAULT_EXAM_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+  const settings = {
+    ...DEFAULT_EXAM_SETTINGS,
+    ...(stored && typeof stored === 'object' ? stored : {}),
+  };
   const wholeNumber = (value: unknown) =>
     typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 
@@ -228,7 +231,8 @@ export function sessionReducer(
 
     case 'goTo':
     case 'move': {
-      const target = action.type === 'goTo' ? action.index : session.currentIndex + action.direction;
+      const target =
+        action.type === 'goTo' ? action.index : session.currentIndex + action.direction;
       const currentIndex = Math.min(Math.max(target, 0), session.questionOrder.length - 1);
       return currentIndex === session.currentIndex ? session : { ...session, currentIndex };
     }

@@ -160,6 +160,7 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 | `npm run generate:icons` | Regenerates the PNG app icons in `public/` from `public/favicon.svg`. |
 | `npm test` | Runs the unit tests and the `questions.json` checks with Vitest. |
 | `npm run lint` | Runs ESLint. |
+| `npm run format` | Formats the code with Prettier (`npm run format:check` only checks, as CI does). |
 
 ## Features
 

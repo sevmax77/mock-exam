@@ -69,14 +69,14 @@ export function History({ attempts, questionById, onClear, onExport, onImport }:
             <details key={attempt.id} className="history-item">
               <summary>
                 <span>
-                  {attempt.mode === 'exam' ? 'Exam' : 'Practice'} - {formatDate(attempt.completedAt)}
+                  {attempt.mode === 'exam' ? 'Exam' : 'Practice'} -{' '}
+                  {formatDate(attempt.completedAt)}
                 </span>
                 <strong>{percentage}%</strong>
               </summary>
               <p>
                 Correct {attempt.correctCount}, wrong {attempt.wrongCount}, total{' '}
-                {attempt.totalQuestions}.
-                {attempt.timedOut && ' Time ran out.'}
+                {attempt.totalQuestions}.{attempt.timedOut && ' Time ran out.'}
               </p>
               {wrongQuestions.length > 0 && (
                 <ul>

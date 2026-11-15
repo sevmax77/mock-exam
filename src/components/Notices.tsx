@@ -6,9 +6,9 @@ export function StorageErrorNotice({ onDismiss }: { onDismiss: () => void }) {
       <div>
         <h2>Could not save on this device</h2>
         <p>
-          The browser refused to store your latest changes (storage may be full or disabled,
-          for example in private browsing). Export your question bank to keep a copy, and
-          clear old attempt history to free space.
+          The browser refused to store your latest changes (storage may be full or disabled, for
+          example in private browsing). Export your question bank to keep a copy, and clear old
+          attempt history to free space.
         </p>
       </div>
       <button className="ghost-button" onClick={onDismiss}>
@@ -38,9 +38,9 @@ export function BundledUpdateNotice({
       <div>
         <h2>New questions.json available</h2>
         <p>
-          This app version ships a different question bank ({bundledCount} questions) than the
-          one you edited on this device ({localCount} questions). Switching replaces your local
-          edits, so export them first if you want to keep them.
+          This app version ships a different question bank ({bundledCount} questions) than the one
+          you edited on this device ({localCount} questions). Switching replaces your local edits,
+          so export them first if you want to keep them.
         </p>
       </div>
       <div className="notice-actions">
@@ -82,27 +82,26 @@ export function OfflineNotices({ status, readyNotice, onDismissReady }: OfflineN
           {status === 'needs-https' ? (
             <>
               <p>
-                iPhone needs an <strong>https://</strong> address to cache this app for offline
-                use. A plain <code>http://</code> link cannot finish the install.
+                iPhone needs an <strong>https://</strong> address to cache this app for offline use.
+                A plain <code>http://</code> link cannot finish the install.
               </p>
               <p>
                 On Windows, run <code>npm run serve</code>, then open{' '}
                 <code>https://YOUR_WINDOWS_IP:4173</code> in Safari. Tap through the certificate
-                warning once, delete any old Home Screen icon, add the app again, and open it
-                once while connected.
+                warning once, delete any old Home Screen icon, add the app again, and open it once
+                while connected.
               </p>
             </>
           ) : (
             <>
               <p>
-                The offline cache is not active yet on this iPhone. That usually means the app
-                was added from the wrong address or before caching finished.
+                The offline cache is not active yet on this iPhone. That usually means the app was
+                added from the wrong address or before caching finished.
               </p>
               <p>
                 On Windows, run <code>npm run serve</code>, open{' '}
-                <code>https://YOUR_WINDOWS_IP:4173</code> in Safari, delete this Home Screen
-                icon, add the app again, then open it once while connected so caching can
-                finish.
+                <code>https://YOUR_WINDOWS_IP:4173</code> in Safari, delete this Home Screen icon,
+                add the app again, then open it once while connected so caching can finish.
               </p>
             </>
           )}
@@ -121,8 +120,8 @@ export function OfflineNotices({ status, readyNotice, onDismissReady }: OfflineN
           <div>
             <h2>Ready for offline use</h2>
             <p>
-              The app is cached on this iPhone. You can close it or restart your phone and open
-              it again without home Wi-Fi.
+              The app is cached on this iPhone. You can close it or restart your phone and open it
+              again without home Wi-Fi.
             </p>
           </div>
           <button className="ghost-button" onClick={onDismissReady}>

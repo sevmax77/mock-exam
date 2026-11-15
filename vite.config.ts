@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -24,6 +24,31 @@ function iphoneUrlHelpPlugin() {
   };
 }
 
+const QUESTIONS_CHUNK = 'questions';
+const APP_CHUNK_WARNING_KB = 500;
+
+/**
+ * Vite's chunk size warning, minus the questions chunk: that one is plain data and grows with the
+ * question bank, so only app code is held to the limit.
+ */
+function appChunkSizeWarningPlugin(): Plugin {
+  return {
+    name: 'app-chunk-size-warning',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        const kb = file.type === 'chunk' ? Buffer.byteLength(file.code) / 1000 : 0;
+        if (file.type === 'chunk' && file.name !== QUESTIONS_CHUNK && kb > APP_CHUNK_WARNING_KB) {
+          this.warn(
+            `${file.fileName} is ${Math.round(kb)} kB after minification ` +
+              `(limit ${APP_CHUNK_WARNING_KB} kB). Consider splitting it with a dynamic import().`,
+          );
+        }
+      }
+    },
+  };
+}
+
 const previewHttps =
   fs.existsSync(keyPath) && fs.existsSync(certPath)
     ? {
@@ -33,6 +58,19 @@ const previewHttps =
     : undefined;
 
 export default defineConfig({
+  build: {
+    // Replaced by appChunkSizeWarningPlugin, which skips the questions chunk.
+    chunkSizeWarningLimit: Number.POSITIVE_INFINITY,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          // The bundled questions.json goes in its own chunk, so an app update doesn't re-download
+          // the question bank and a bank update doesn't re-download the app.
+          groups: [{ name: QUESTIONS_CHUNK, test: /src[\\/]data[\\/]questions\.json$/ }],
+        },
+      },
+    },
+  },
   preview: {
     host: '0.0.0.0',
     port: 4173,
@@ -40,6 +78,7 @@ export default defineConfig({
   },
   plugins: [
     iphoneUrlHelpPlugin(),
+    appChunkSizeWarningPlugin(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',

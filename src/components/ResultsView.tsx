@@ -17,7 +17,15 @@ type ResultsViewProps = {
   onPracticeFlagged: () => void;
 };
 
-function ResultHeading({ index, isCorrect, flagged }: { index: number; isCorrect: boolean; flagged?: boolean }) {
+function ResultHeading({
+  index,
+  isCorrect,
+  flagged,
+}: {
+  index: number;
+  isCorrect: boolean;
+  flagged?: boolean;
+}) {
   return (
     <div className="result-heading">
       <span>
@@ -89,7 +97,10 @@ export function ResultsView({
             Practice {flaggedCount} flagged
           </button>
         )}
-        <button className={retryCount > 0 ? 'secondary-button' : 'primary-button'} onClick={onNewExam}>
+        <button
+          className={retryCount > 0 ? 'secondary-button' : 'primary-button'}
+          onClick={onNewExam}
+        >
           New exam
         </button>
         <button className="secondary-button" onClick={onNewPractice}>
@@ -104,7 +115,11 @@ export function ResultsView({
           if (!question) {
             return (
               <article key={result.questionId} className="result-card">
-                <ResultHeading index={index} isCorrect={result.isCorrect} flagged={result.flagged} />
+                <ResultHeading
+                  index={index}
+                  isCorrect={result.isCorrect}
+                  flagged={result.flagged}
+                />
                 <p className="empty-note">This question was deleted from the question bank.</p>
               </article>
             );
@@ -121,7 +136,8 @@ export function ResultsView({
                 Your answer: <strong>{displayAnswer(result.selectedOptionIds, optionOrder)}</strong>
               </p>
               <p>
-                Correct answer: <strong>{displayAnswer(result.correctOptionIds, optionOrder)}</strong>
+                Correct answer:{' '}
+                <strong>{displayAnswer(result.correctOptionIds, optionOrder)}</strong>
               </p>
               <OptionExplanationsPanel question={question} orderedOptions={orderedOptions} />
             </article>

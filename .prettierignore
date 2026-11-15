@@ -1,0 +1,15 @@
+# Generated or installed
+dist
+node_modules
+package-lock.json
+public
+
+# Data: the question bank is edited by the app and the import scripts, not by hand.
+src/data
+
+# Separate projects with their own conventions
+mcp-server
+.pi
+
+# Prose
+*.md

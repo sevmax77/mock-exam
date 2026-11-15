@@ -71,7 +71,9 @@ export function QuestionBankView({
           .includes(searchText),
       )
     : orderedQuestions;
-  const singleAnswerCount = questions.filter((question) => question.correctOptionIds.length === 1).length;
+  const singleAnswerCount = questions.filter(
+    (question) => question.correctOptionIds.length === 1,
+  ).length;
   const multiAnswerCount = questions.length - singleAnswerCount;
 
   return (
@@ -167,7 +169,11 @@ export function QuestionBankView({
               </p>
               <h3>{question.question}</h3>
               <div className="question-meta">
-                <span>{question.correctOptionIds.length === 1 ? 'Single answer' : `Choose ${question.correctOptionIds.length}`}</span>
+                <span>
+                  {question.correctOptionIds.length === 1
+                    ? 'Single answer'
+                    : `Choose ${question.correctOptionIds.length}`}
+                </span>
                 <span>{question.options.length} options</span>
                 <span>{describeStats(stats.get(question.id))}</span>
                 {stats.get(question.id)?.lastFlagged && <span className="flag-label">Flagged</span>}
@@ -188,9 +194,7 @@ export function QuestionBankView({
         ))}
       </div>
 
-      {!filteredQuestions.length && (
-        <p className="empty-note">No questions match your search.</p>
-      )}
+      {!filteredQuestions.length && <p className="empty-note">No questions match your search.</p>}
     </section>
   );
 }

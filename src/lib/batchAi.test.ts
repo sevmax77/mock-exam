@@ -74,7 +74,9 @@ describe('fillExplanationsFromReview', () => {
   });
 
   it('refuses when the AI disagrees with the answer key', () => {
-    expect(fillExplanationsFromReview(pendingQuestion(), review({ recommendedOptionIds: ['A'] }))).toBeNull();
+    expect(
+      fillExplanationsFromReview(pendingQuestion(), review({ recommendedOptionIds: ['A'] })),
+    ).toBeNull();
   });
 
   it('refuses when the options changed since the request', () => {

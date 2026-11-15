@@ -20,6 +20,23 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const MCP_SERVER_URL = process.env.MOCK_EXAM_MCP_URL ?? "http://127.0.0.1:8765/mcp";
 
+/**
+ * Joins the text blocks of a tool result. `callTool` is typed as a union that includes the legacy
+ * `{ toolResult }` shape, so `content` is checked at runtime rather than trusted from the type.
+ */
+function resultText(result: unknown): string {
+	const content = (result as { content?: unknown } | null)?.content;
+	if (!Array.isArray(content)) return "";
+
+	return content
+		.map((block: unknown) => {
+			const { type, text } = (block ?? {}) as { type?: unknown; text?: unknown };
+			return type === "text" && typeof text === "string" ? text : "";
+		})
+		.filter(Boolean)
+		.join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
 	let client: Client | undefined;
 	let connecting: Promise<Client> | undefined;
@@ -137,17 +154,10 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (result.isError) {
-				const message = result.content
-					?.map((block) => (block.type === "text" ? block.text : ""))
-					.filter(Boolean)
-					.join("\n");
-				throw new Error(message || "mock-exam MCP server returned an error");
+				throw new Error(resultText(result) || "mock-exam MCP server returned an error");
 			}
 
-			const text = result.content
-				?.map((block) => (block.type === "text" ? block.text : ""))
-				.filter(Boolean)
-				.join("\n") ?? "(no content returned)";
+			const text = resultText(result) || "(no content returned)";
 
 			return {
 				content: [{ type: "text", text }],

@@ -36,7 +36,11 @@ const attempt = (completedAt: string, results: QuestionResult[]): Attempt => ({
 // Stored newest first, like the app does.
 const attempts = [
   attempt('2026-03-03T00:00:00.000Z', [result('q2', true), result('q3', false, true)]),
-  attempt('2026-03-02T00:00:00.000Z', [result('q1', false), result('q2', false, true), result('q9', false)]),
+  attempt('2026-03-02T00:00:00.000Z', [
+    result('q1', false),
+    result('q2', false, true),
+    result('q9', false),
+  ]),
   attempt('2026-03-01T00:00:00.000Z', [result('q1', true), result('q2', false)]),
 ];
 
