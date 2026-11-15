@@ -140,7 +140,8 @@ textarea,
 input[type="search"],
 input[type="text"],
 input[type="number"],
-input[type="password"] {
+input[type="password"],
+select {
   width: 100%;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
@@ -154,7 +155,8 @@ textarea:focus,
 input[type="search"]:focus,
 input[type="text"]:focus,
 input[type="number"]:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+select:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(37, 99, 235, 0.16);
 }
@@ -942,6 +944,7 @@ code {
   }
 
   .toolbar-actions,
+  .history-actions,
   .bank-card-actions,
   .form-section-heading {
     align-items: stretch;
@@ -950,6 +953,8 @@ code {
 
   .toolbar-actions button,
   .toolbar-actions label,
+  .history-actions button,
+  .history-actions label,
   .bank-card-actions button,
   .form-section-heading button {
     width: 100%;
@@ -1012,4 +1017,34 @@ code {
 .field-hint {
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.bank-toolbar select {
+  max-width: 280px;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.result-heading .flag-label {
+  margin-left: 10px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+/* Keyboard shortcuts only help with a physical keyboard, which touch-only phones lack. */
+.keyboard-hint {
+  display: none;
+  margin: 18px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .keyboard-hint {
+    display: block;
+  }
 }

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Question } from '../types';
+import { sortByWeakness, type QuestionStats } from '../lib/stats';
 
 type QuestionBankViewProps = {
   questions: Question[];
+  stats: Map<string, QuestionStats>;
   defaultCount: number;
   onBack: () => void;
   onAdd: () => void;
@@ -14,8 +16,19 @@ type QuestionBankViewProps = {
   onReset: () => void;
 };
 
+/** "Answered 3 times · 67% correct", or "Not answered yet". */
+function describeStats(stat: QuestionStats | undefined): string {
+  if (!stat) {
+    return 'Not answered yet';
+  }
+
+  const times = stat.seen === 1 ? 'once' : `${stat.seen} times`;
+  return `Answered ${times} · ${Math.round((stat.correct / stat.seen) * 100)}% correct`;
+}
+
 export function QuestionBankView({
   questions,
+  stats,
   defaultCount,
   onBack,
   onAdd,
@@ -27,9 +40,11 @@ export function QuestionBankView({
   onReset,
 }: QuestionBankViewProps) {
   const [search, setSearch] = useState('');
+  const [weakestFirst, setWeakestFirst] = useState(false);
   const searchText = search.trim().toLowerCase();
+  const orderedQuestions = weakestFirst ? sortByWeakness(questions, stats) : questions;
   const filteredQuestions = searchText
-    ? questions.filter((question) =>
+    ? orderedQuestions.filter((question) =>
         [
           question.id,
           question.question,
@@ -40,7 +55,7 @@ export function QuestionBankView({
           .toLowerCase()
           .includes(searchText),
       )
-    : questions;
+    : orderedQuestions;
   const singleAnswerCount = questions.filter((question) => question.correctOptionIds.length === 1).length;
   const multiAnswerCount = questions.length - singleAnswerCount;
 
@@ -81,6 +96,16 @@ export function QuestionBankView({
             placeholder="Search question, option, or explanation"
           />
         </label>
+        <label className="search-field">
+          <span>Order</span>
+          <select
+            value={weakestFirst ? 'weakest' : 'bank'}
+            onChange={(event) => setWeakestFirst(event.target.value === 'weakest')}
+          >
+            <option value="bank">Bank order</option>
+            <option value="weakest">Weakest first</option>
+          </select>
+        </label>
         <div className="toolbar-actions">
           <button className="primary-button" onClick={onAdd}>
             Add question
@@ -119,6 +144,8 @@ export function QuestionBankView({
               <div className="question-meta">
                 <span>{question.correctOptionIds.length === 1 ? 'Single answer' : `Choose ${question.correctOptionIds.length}`}</span>
                 <span>{question.options.length} options</span>
+                <span>{describeStats(stats.get(question.id))}</span>
+                {stats.get(question.id)?.lastFlagged && <span className="flag-label">Flagged</span>}
               </div>
             </div>
             <div className="bank-card-actions">

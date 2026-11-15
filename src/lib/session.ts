@@ -2,7 +2,11 @@ import type { Attempt, Question, SavedExamState, SessionMode } from '../types';
 import { getScore } from './scoring';
 import { orderItems, shuffle } from './shuffle';
 
-export const MAX_SAVED_ATTEMPTS = 20;
+/**
+ * History is capped to stay well inside the browser's storage quota. A full 127-question attempt
+ * takes about 15 KB, so 50 attempts stay under 1 MB.
+ */
+export const MAX_SAVED_ATTEMPTS = 50;
 
 export type ExamSettings = {
   shuffleQuestions: boolean;
@@ -77,30 +81,6 @@ export function createSession(
   };
 }
 
-/**
- * Questions whose most recent result in the saved history was wrong, most recent first.
- * Questions answered correctly in a later attempt, or deleted from the bank, are left out.
- */
-export function getMistakeQuestionIds(
-  attempts: Attempt[],
-  questionById: Map<string, Question>,
-): string[] {
-  const latestResult = new Map<string, boolean>();
-
-  // Attempts are stored newest first, so the first result seen for a question is its latest.
-  for (const attempt of attempts) {
-    for (const result of attempt.results ?? []) {
-      if (!latestResult.has(result.questionId)) {
-        latestResult.set(result.questionId, result.isCorrect);
-      }
-    }
-  }
-
-  return [...latestResult]
-    .filter(([questionId, isCorrect]) => !isCorrect && questionById.has(questionId))
-    .map(([questionId]) => questionId);
-}
-
 /** Wrong answers of one attempt that still exist in the bank. */
 export function getWrongQuestionIds(
   attempt: Attempt,
@@ -108,6 +88,16 @@ export function getWrongQuestionIds(
 ): string[] {
   return attempt.results
     .filter((result) => !result.isCorrect && questionById.has(result.questionId))
+    .map((result) => result.questionId);
+}
+
+/** Flagged questions of one attempt that still exist in the bank. */
+export function getFlaggedResultIds(
+  attempt: Attempt,
+  questionById: Map<string, Question>,
+): string[] {
+  return attempt.results
+    .filter((result) => result.flagged && questionById.has(result.questionId))
     .map((result) => result.questionId);
 }
 
@@ -271,6 +261,10 @@ export function buildAttempt(
   timedOut = false,
 ): Attempt {
   const score = getScore(session, questionById, scoredIds);
+  const flagged = new Set(session.flaggedQuestionIds);
+  const results = score.results.map((result) =>
+    flagged.has(result.questionId) ? { ...result, flagged: true } : result,
+  );
 
   return {
     id: `${now.getTime()}`,
@@ -280,7 +274,7 @@ export function buildAttempt(
     totalQuestions: scoredIds.length,
     correctCount: score.correctCount,
     wrongCount: score.wrongCount,
-    results: score.results,
+    results,
     ...(timedOut ? { timedOut: true } : {}),
   };
 }

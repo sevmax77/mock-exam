@@ -10,13 +10,23 @@ type HomeViewProps = {
   examSettings: ExamSettings;
   /** Questions whose latest result in history was wrong. */
   mistakeCount: number;
+  /** Questions flagged the last time they were answered. */
+  flaggedCount: number;
+  /** Size of a focus session; 0 hides the card (no history yet). */
+  focusCount: number;
   onContinue: () => void;
   onStart: (mode: SessionMode) => void;
   onPracticeMistakes: () => void;
+  onPracticeFlagged: () => void;
+  onPracticeFocus: () => void;
   onOpenBank: () => void;
   onOpenSettings: () => void;
   onClearHistory: () => void;
+  onExportHistory: () => void;
+  onImportHistory: (file: File) => Promise<void>;
 };
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /** "All 127 questions" or "25 random questions", plus the exam time limit when set. */
 function describeSession(settings: ExamSettings, bankSize: number, mode: SessionMode): string {
@@ -36,12 +46,18 @@ export function HomeView({
   questionById,
   examSettings,
   mistakeCount,
+  flaggedCount,
+  focusCount,
   onContinue,
   onStart,
   onPracticeMistakes,
+  onPracticeFlagged,
+  onPracticeFocus,
   onOpenBank,
   onOpenSettings,
   onClearHistory,
+  onExportHistory,
+  onImportHistory,
 }: HomeViewProps) {
   const bankSize = questionById.size;
 
@@ -78,10 +94,24 @@ export function HomeView({
         {mistakeCount > 0 && (
           <button className="mode-card" onClick={onPracticeMistakes}>
             <span>Practice mistakes</span>
-            <strong>
-              {mistakeCount} {mistakeCount === 1 ? 'question' : 'questions'} to review
-            </strong>
+            <strong>{plural(mistakeCount, 'question')} to review</strong>
             <small>Questions you got wrong the last time you answered them, in practice mode.</small>
+          </button>
+        )}
+        {flaggedCount > 0 && (
+          <button className="mode-card" onClick={onPracticeFlagged}>
+            <span>Practice flagged</span>
+            <strong>{plural(flaggedCount, 'flagged question')}</strong>
+            <small>Questions you flagged the last time you answered them, in practice mode.</small>
+          </button>
+        )}
+        {focusCount > 0 && (
+          <button className="mode-card" onClick={onPracticeFocus}>
+            <span>Focus practice</span>
+            <strong>Your {plural(focusCount, 'weakest question')}</strong>
+            <small>
+              Picks the questions you get wrong most often, then ones you haven't answered yet.
+            </small>
           </button>
         )}
         <button className="mode-card" onClick={onOpenBank}>
@@ -96,7 +126,13 @@ export function HomeView({
         </button>
       </section>
 
-      <History attempts={attempts} questionById={questionById} onClear={onClearHistory} />
+      <History
+        attempts={attempts}
+        questionById={questionById}
+        onClear={onClearHistory}
+        onExport={onExportHistory}
+        onImport={onImportHistory}
+      />
     </>
   );
 }

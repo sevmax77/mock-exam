@@ -6,14 +6,38 @@ type HistoryProps = {
   attempts: Attempt[];
   questionById: Map<string, Question>;
   onClear: () => void;
+  onExport: () => void;
+  onImport: (file: File) => Promise<void>;
 };
 
-export function History({ attempts, questionById, onClear }: HistoryProps) {
+function ImportButton({ onImport }: { onImport: (file: File) => Promise<void> }) {
+  return (
+    <label className="secondary-button file-button">
+      Import backup
+      <input
+        type="file"
+        accept="application/json,.json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            void onImport(file);
+            event.target.value = '';
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+export function History({ attempts, questionById, onClear, onExport, onImport }: HistoryProps) {
   if (!attempts.length) {
     return (
       <section className="panel">
         <h2>Saved history</h2>
         <p>No completed attempts yet. Your results will be saved on this device.</p>
+        <div className="history-actions">
+          <ImportButton onImport={onImport} />
+        </div>
       </section>
     );
   }
@@ -25,9 +49,15 @@ export function History({ attempts, questionById, onClear }: HistoryProps) {
           <p className="eyebrow">Saved on this device</p>
           <h2>Attempt history</h2>
         </div>
-        <button className="ghost-button" onClick={onClear}>
-          Clear history
-        </button>
+        <div className="history-actions">
+          <button className="secondary-button" onClick={onExport}>
+            Export backup
+          </button>
+          <ImportButton onImport={onImport} />
+          <button className="ghost-button" onClick={onClear}>
+            Clear history
+          </button>
+        </div>
       </div>
 
       <div className="history-list">
@@ -46,6 +76,7 @@ export function History({ attempts, questionById, onClear }: HistoryProps) {
               <p>
                 Correct {attempt.correctCount}, wrong {attempt.wrongCount}, total{' '}
                 {attempt.totalQuestions}.
+                {attempt.timedOut && ' Time ran out.'}
               </p>
               {wrongQuestions.length > 0 && (
                 <ul>
