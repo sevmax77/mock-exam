@@ -68,6 +68,10 @@ code {
   width: min(1040px, 100%);
   margin: 0 auto;
   padding: 28px;
+  /* Keep content clear of the notch / Dynamic Island and rounded corners (needs viewport-fit=cover). */
+  padding-top: calc(28px + env(safe-area-inset-top));
+  padding-right: calc(28px + env(safe-area-inset-right));
+  padding-left: calc(28px + env(safe-area-inset-left));
 }
 
 .hero {
@@ -178,6 +182,20 @@ code {
 .notice-panel-info {
   border-color: #9ec5ef;
   background: #f2f8ff;
+}
+
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.selection-hint {
+  margin: 12px 0 0;
+  color: #475569;
+  font-size: 0.92rem;
+  font-weight: 650;
 }
 
 .mode-grid {
@@ -779,12 +797,25 @@ code {
 @media (max-width: 720px) {
   .app-shell {
     padding: 14px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-right: calc(14px + env(safe-area-inset-right));
+    padding-left: calc(14px + env(safe-area-inset-left));
   }
 
   .hero,
   .session-bar,
-  .resume-panel {
+  .resume-panel,
+  .notice-panel {
     flex-direction: column;
+  }
+
+  .notice-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .notice-actions button {
+    flex: 1 1 100%;
   }
 
   .hero,
@@ -825,4 +856,10 @@ code {
   .sticky-actions button {
     flex: 1 1 calc(50% - 8px);
   }
+}
+
+.session-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }

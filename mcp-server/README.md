@@ -6,13 +6,14 @@ returns a full multiple-choice practice question — question text, all
 answer options, the correct option id(s), a per-option explanation, and an
 overall summary — picked at random from `questions.json`.
 
-This is a standalone project, separate from the Vite app in the repo root.
-`questions.json` here is a **one-time copy** of `../src/data/questions.json`
-(not auto-synced). Re-copy it manually if you want to refresh the bank:
+This is a standalone project, separate from the Vite app in the repo root,
+but it has no question bank of its own. It serves the web app's bank,
+`../src/data/questions.json`, so the app and the server always have the same
+questions. To serve a different file, set the `MOCK_EXAM_QUESTIONS`
+environment variable to its path.
 
-```bash
-cp ../src/data/questions.json ./questions.json
-```
+The bank is validated at startup, and the server refuses to start if a question
+is malformed (for example, a correct answer that isn't one of the options).
 
 ## Setup
 
@@ -83,7 +84,15 @@ Open the printed URL, choose transport type `Streamable HTTP`, enter
 
 ### `get_random_question`
 
-No input arguments. Returns:
+All arguments are optional:
+
+| Argument | Type | Effect |
+|---|---|---|
+| `question_id` | string | Return this specific question instead of a random one. |
+| `multi_answer_only` | boolean | Pick only select-all-that-apply questions. |
+| `exclude_ids` | string[] | Skip these ids, e.g. questions already asked in this quiz. |
+
+Returns:
 
 ```json
 {

@@ -17,6 +17,7 @@ to that URL and call the tool.
 from __future__ import annotations
 
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -27,15 +28,76 @@ from mcp.server.mcpserver import MCPServer
 
 HOST = "127.0.0.1"
 PORT = 8765
-DATA_FILE = Path(__file__).parent / "questions.json"
+SERVER_DIR = Path(__file__).parent
+
+
+def resolve_data_file() -> Path:
+    """Pick the question bank to serve.
+
+    The web app's bank (../src/data/questions.json) is the only copy, so the
+    app and this server always serve the same questions. Set the
+    MOCK_EXAM_QUESTIONS env var to serve a different file.
+    """
+    override = os.environ.get("MOCK_EXAM_QUESTIONS")
+    path = (
+        Path(override).expanduser().resolve()
+        if override
+        else SERVER_DIR.parent / "src" / "data" / "questions.json"
+    )
+
+    if not path.is_file():
+        raise RuntimeError(
+            f"Question bank not found: {path}. "
+            "Run the server from the mock-exam repo or set MOCK_EXAM_QUESTIONS."
+        )
+
+    return path
+
+
+def validate_questions(questions: Any, source: Path) -> list[dict[str, Any]]:
+    """Fail at startup, not on a random tool call, if the bank has the wrong shape."""
+    if not isinstance(questions, list) or not questions:
+        raise RuntimeError(f"{source} must contain a non-empty JSON array of questions")
+
+    errors: list[str] = []
+    for index, question in enumerate(questions, start=1):
+        label = question.get("id", f"#{index}") if isinstance(question, dict) else f"#{index}"
+        if not isinstance(question, dict):
+            errors.append(f"{label}: not an object")
+            continue
+        for field in ("id", "question", "options", "correctOptionIds"):
+            if field not in question:
+                errors.append(f"{label}: missing '{field}'")
+        options = question.get("options") or []
+        option_ids = {option.get("id") for option in options if isinstance(option, dict)}
+        if len(options) < 2:
+            errors.append(f"{label}: needs at least 2 options")
+        for option in options:
+            if not isinstance(option, dict) or "id" not in option or "text" not in option:
+                errors.append(f"{label}: every option needs 'id' and 'text'")
+                break
+        for answer_id in question.get("correctOptionIds") or []:
+            if answer_id not in option_ids:
+                errors.append(f"{label}: correct answer '{answer_id}' is not an option")
+        if not question.get("correctOptionIds"):
+            errors.append(f"{label}: no correct answer")
+
+    if errors:
+        shown = "\n  ".join(errors[:20])
+        more = f"\n  ... and {len(errors) - 20} more" if len(errors) > 20 else ""
+        raise RuntimeError(f"Invalid question bank {source}:\n  {shown}{more}")
+
+    return questions
+
 
 # --- Load question bank once at startup ---------------------------------
 
-with DATA_FILE.open("r", encoding="utf-8") as f:
-    QUESTIONS: list[dict[str, Any]] = json.load(f)
+DATA_FILE = resolve_data_file()
 
-if not QUESTIONS:
-    raise RuntimeError(f"No questions found in {DATA_FILE}")
+with DATA_FILE.open("r", encoding="utf-8") as f:
+    QUESTIONS: list[dict[str, Any]] = validate_questions(json.load(f), DATA_FILE)
+
+QUESTIONS_BY_ID = {question["id"]: question for question in QUESTIONS}
 
 # --- MCP server -----------------------------------------------------------
 
@@ -56,11 +118,33 @@ mcp = MCPServer(
         "a per-option explanation of why it is or is not correct, and an "
         "overall summary. Some questions have exactly one correct option "
         "(single-answer) and some have two or more (select-all-that-apply); "
-        "check the length of correct_option_ids to tell which kind it is."
+        "check the length of correct_option_ids to tell which kind it is. "
+        "Optional arguments: question_id to fetch one specific question, "
+        "multi_answer_only to pick only select-all-that-apply questions, and "
+        "exclude_ids to avoid repeating questions already asked in this quiz."
     ),
 )
-def get_random_question() -> dict[str, Any]:
-    question = random.choice(QUESTIONS)
+def get_random_question(
+    question_id: str | None = None,
+    multi_answer_only: bool = False,
+    exclude_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    if question_id:
+        question = QUESTIONS_BY_ID.get(question_id)
+        if question is None:
+            raise ValueError(f"No question with id '{question_id}'")
+    else:
+        excluded = set(exclude_ids or [])
+        candidates = [
+            q
+            for q in QUESTIONS
+            if q["id"] not in excluded
+            and (not multi_answer_only or len(q["correctOptionIds"]) > 1)
+        ]
+        if not candidates:
+            raise ValueError("No questions match the given filters")
+        question = random.choice(candidates)
+
     return {
         "id": question["id"],
         "question": question["question"],
@@ -68,12 +152,12 @@ def get_random_question() -> dict[str, Any]:
             {
                 "id": option["id"],
                 "text": option["text"],
-                "explanation": option["explanation"],
+                "explanation": option.get("explanation", ""),
             }
             for option in question["options"]
         ],
         "correct_option_ids": question["correctOptionIds"],
-        "summary": question["summary"],
+        "summary": question.get("summary", ""),
     }
 
 

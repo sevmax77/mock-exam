@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +12,14 @@ const defaultPdfPath = path.join(
   'data',
   'aws-certified-generative-ai-developer-professional-aip-c01.pdf',
 );
-const defaultOutputPath = path.join(projectRoot, 'src', 'data', 'questions.json');
+// Deliberately NOT src/data/questions.json: this script emits the legacy format (one
+// `explanation` per question), so writing over the curated bank would lose per-option
+// explanations. Review the output, run `npm run migrate:explanations -- <file>`, then merge.
+const defaultOutputPath = path.join(projectRoot, 'src', 'data', 'questions.imported.json');
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
+const force = args.has('--force');
 const pdfPath = getArgValue('--pdf') ?? defaultPdfPath;
 const outputPath = getArgValue('--out') ?? defaultOutputPath;
 
@@ -167,10 +172,6 @@ function formatExplanationBlock(block) {
   }
 
   return normalized;
-}
-
-function isOptionLine(line) {
-  return /^([A-Z])\.\s*(.*)$/.test(line);
 }
 
 function isAnswerLine(line) {
@@ -443,6 +444,13 @@ async function main() {
   const json = `${JSON.stringify(questions, null, 2)}\n`;
 
   if (!dryRun) {
+    if (existsSync(outputPath) && !force) {
+      throw new Error(
+        `${path.relative(projectRoot, outputPath)} already exists. Pass --force to overwrite it, ` +
+          'or choose another file with --out <path>.',
+      );
+    }
+
     await writeFile(outputPath, json, 'utf8');
   }
 

@@ -46,7 +46,8 @@ export default defineConfig({
       devOptions: {
         enabled: false,
       },
-      includeAssets: ['favicon.svg'],
+      // index.html links favicon.svg and the apple-touch-icon; the plugin injects the manifest link.
+      includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Mock Exam',
         short_name: 'Mock Exam',
@@ -57,12 +58,16 @@ export default defineConfig({
         orientation: 'portrait',
         background_color: '#f3f6fb',
         theme_color: '#14213d',
+        // PNGs generated from public/favicon.svg by `npm run generate:icons`.
         icons: [
+          { src: '/pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: '/favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
+            src: '/maskable-icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
