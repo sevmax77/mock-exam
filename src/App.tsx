@@ -37,17 +37,25 @@ import {
   type ApplyAiReviewMode,
   type QuestionFormState,
 } from './lib/questionForm';
+import { createHistoryBackup, mergeAttempts, normalizeStoredAttempts, parseHistoryBackup } from './lib/history';
 import {
   MAX_SAVED_ATTEMPTS,
   buildAttempt,
   countAnswered,
   createSession,
-  getMistakeQuestionIds,
+  getFlaggedResultIds,
   getScoredQuestionIds,
   getWrongQuestionIds,
   normalizeExamSettings,
   type ExamSettings,
 } from './lib/session';
+import {
+  DEFAULT_FOCUS_SESSION_SIZE,
+  getFlaggedQuestionIds,
+  getMistakeQuestionIds,
+  getQuestionStats,
+  getWeakQuestionIds,
+} from './lib/stats';
 import {
   AI_SETTINGS_KEY,
   ATTEMPTS_KEY,
@@ -92,10 +100,7 @@ function App() {
   );
   const [attempts, setAttempts] = usePersistentState<Attempt[]>(
     ATTEMPTS_KEY,
-    () => {
-      const stored = loadJson<Attempt[]>(ATTEMPTS_KEY, []);
-      return Array.isArray(stored) ? stored : [];
-    },
+    () => normalizeStoredAttempts(loadJson<unknown>(ATTEMPTS_KEY, [])),
     { onSaveError: reportStorageError },
   );
 
@@ -123,9 +128,26 @@ function App() {
   const currentQuestion = currentQuestionId ? questionById.get(currentQuestionId) : undefined;
   const selectedIds = currentQuestionId ? (session?.selections[currentQuestionId] ?? []) : [];
   const answeredCount = session ? countAnswered(session) : 0;
+  const questionStats = useMemo(() => getQuestionStats(attempts), [attempts]);
   const mistakeIds = useMemo(
-    () => getMistakeQuestionIds(attempts, questionById),
-    [attempts, questionById],
+    () => getMistakeQuestionIds(questionStats, questionById),
+    [questionStats, questionById],
+  );
+  const flaggedIds = useMemo(
+    () => getFlaggedQuestionIds(questionStats, questionById),
+    [questionStats, questionById],
+  );
+  // Focus practice needs some history to rank by; until then it would just be random questions.
+  const focusIds = useMemo(
+    () =>
+      questionStats.size
+        ? getWeakQuestionIds(
+            questionBank,
+            questionStats,
+            examSettings.questionCount || DEFAULT_FOCUS_SESSION_SIZE,
+          )
+        : [],
+    [questionBank, questionStats, examSettings.questionCount],
   );
 
   const openSettings = (returnTo: Screen) => {
@@ -210,6 +232,36 @@ function App() {
   const clearHistory = () => {
     if (window.confirm('Clear saved attempt history?')) {
       setAttempts([]);
+    }
+  };
+
+  const exportHistory = () => {
+    const date = new Date().toISOString().slice(0, 10);
+    downloadJson(`mock-exam-history-${date}.json`, createHistoryBackup(attempts));
+  };
+
+  const importHistory = async (file: File) => {
+    try {
+      const { attempts: imported, skipped } = parseHistoryBackup(JSON.parse(await file.text()));
+      const merged = mergeAttempts(attempts, imported, MAX_SAVED_ATTEMPTS);
+      const notes = [
+        `Added ${merged.added} of ${imported.length} attempts.`,
+        imported.length - merged.added > 0 &&
+          'The rest were already in your history, or older than the newest ' +
+            `${MAX_SAVED_ATTEMPTS} attempts that are kept.`,
+        skipped > 0 && `${skipped} unreadable entries were skipped.`,
+      ].filter(Boolean);
+
+      setAttempts(merged.attempts);
+      window.alert(notes.join(' '));
+    } catch (error) {
+      window.alert(
+        error instanceof SyntaxError
+          ? 'The selected file is not valid JSON.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not import the selected file.',
+      );
     }
   };
 
@@ -408,12 +460,18 @@ function App() {
             questionById={questionById}
             examSettings={examSettings}
             mistakeCount={mistakeIds.length}
+            flaggedCount={flaggedIds.length}
+            focusCount={focusIds.length}
             onContinue={() => setScreen('session')}
             onStart={(mode) => startSession(mode)}
             onPracticeMistakes={() => startSession('practice', mistakeIds)}
+            onPracticeFlagged={() => startSession('practice', flaggedIds)}
+            onPracticeFocus={() => startSession('practice', focusIds)}
             onOpenBank={() => setScreen('bank')}
             onOpenSettings={() => openSettings('home')}
             onClearHistory={clearHistory}
+            onExportHistory={exportHistory}
+            onImportHistory={importHistory}
           />
         </>
       )}
@@ -463,11 +521,15 @@ function App() {
           attempt={latestAttempt}
           questionById={questionById}
           retryCount={getWrongQuestionIds(latestAttempt, questionById).length}
+          flaggedCount={getFlaggedResultIds(latestAttempt, questionById).length}
           onHome={() => setScreen('home')}
           onNewExam={() => startSession('exam')}
           onNewPractice={() => startSession('practice')}
           onRetryWrong={() =>
             startSession('practice', getWrongQuestionIds(latestAttempt, questionById))
+          }
+          onPracticeFlagged={() =>
+            startSession('practice', getFlaggedResultIds(latestAttempt, questionById))
           }
         />
       )}
@@ -475,6 +537,7 @@ function App() {
       {screen === 'bank' && (
         <QuestionBankView
           questions={questionBank}
+          stats={questionStats}
           defaultCount={BUNDLED_BANK.questions.length}
           onBack={() => setScreen('home')}
           onAdd={() => openQuestionForm(createEmptyQuestionForm())}

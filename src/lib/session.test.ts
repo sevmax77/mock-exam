@@ -8,7 +8,7 @@ import {
   buildAttempt,
   countAnswered,
   createSession,
-  getMistakeQuestionIds,
+  getFlaggedResultIds,
   getScoredQuestionIds,
   getWrongQuestionIds,
   normalizeExamSettings,
@@ -100,12 +100,13 @@ describe('normalizeExamSettings', () => {
   });
 });
 
-describe('mistakes', () => {
-  const result = (questionId: string, isCorrect: boolean) => ({
+describe('questions of one attempt', () => {
+  const result = (questionId: string, isCorrect: boolean, flagged?: boolean) => ({
     questionId,
     selectedOptionIds: [],
     correctOptionIds: [],
     isCorrect,
+    ...(flagged ? { flagged } : {}),
   });
   const attempt = (results: Attempt['results']): Attempt => ({
     id: 'a',
@@ -118,19 +119,14 @@ describe('mistakes', () => {
     results,
   });
 
-  it('lists questions whose latest result was wrong, newest attempt first', () => {
-    const attempts = [
-      attempt([result('q2', true), result('q3', false)]),
-      attempt([result('q1', false), result('q2', false), result('q9', false)]),
-    ];
-
-    // q2 was fixed in the newer attempt; q9 is no longer in the bank.
-    expect(getMistakeQuestionIds(attempts, buildQuestionMap(bank))).toEqual(['q3', 'q1']);
-  });
-
-  it('lists the wrong answers of one attempt that still exist', () => {
+  it('lists the wrong answers that still exist', () => {
     const one = attempt([result('q1', false), result('q2', true), result('q9', false)]);
     expect(getWrongQuestionIds(one, buildQuestionMap(bank))).toEqual(['q1']);
+  });
+
+  it('lists the flagged questions that still exist', () => {
+    const one = attempt([result('q1', true, true), result('q2', false), result('q9', false, true)]);
+    expect(getFlaggedResultIds(one, buildQuestionMap(bank))).toEqual(['q1']);
   });
 });
 
@@ -286,6 +282,14 @@ describe('scoring a finished session', () => {
     });
     expect(countAnswered(finished)).toBe(2);
     expect(attempt).not.toHaveProperty('timedOut');
+  });
+
+  it('records which scored questions were flagged', () => {
+    const flagged = session({ flaggedQuestionIds: ['q2', 'q3'] });
+    const attempt = buildAttempt(flagged, buildQuestionMap(bank), ['q1', 'q2']);
+
+    expect(attempt.results.map((result) => result.flagged)).toEqual([undefined, true]);
+    expect(attempt.results[0]).not.toHaveProperty('flagged');
   });
 
   it('marks attempts submitted by the timer', () => {

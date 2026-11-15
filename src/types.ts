@@ -20,6 +20,8 @@ export type QuestionResult = {
   selectedOptionIds: string[];
   correctOptionIds: string[];
   isCorrect: boolean;
+  /** True when the question was flagged when the session ended. */
+  flagged?: boolean;
 };
 
 export type Attempt = {
