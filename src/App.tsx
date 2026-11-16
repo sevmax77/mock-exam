@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Attempt, Question, SessionMode } from './types';
 import { BundledUpdateNotice, OfflineNotices, StorageErrorNotice } from './components/Notices';
 import { HomeView } from './components/HomeView';
@@ -8,47 +8,38 @@ import { QuestionView } from './components/QuestionView';
 import { ResultsView } from './components/ResultsView';
 import { ReviewView } from './components/ReviewView';
 import { SettingsView } from './components/SettingsView';
-import { useAskAi } from './hooks/useAskAi';
+import { useBankImport } from './hooks/useBankImport';
 import { useBatchAskAi } from './hooks/useBatchAskAi';
 import { useScreenHistory } from './hooks/useScreenHistory';
 import type { Screen } from './lib/routing';
 import { useCountdown } from './hooks/useCountdown';
 import { useOfflineStatus } from './hooks/useOfflineStatus';
+import { useQuestionEditor } from './hooks/useQuestionEditor';
 import { usePersistentState } from './hooks/usePersistentState';
 import { useSession } from './hooks/useSession';
 import { DEFAULT_AI_MODEL, normalizeAiSettings, type AiReview, type AiSettings } from './lib/ai';
 import { fillExplanationsFromReview, needsExplanations } from './lib/batchAi';
 import { BUNDLED_BANK } from './lib/bundledBank';
 import { downloadJson } from './lib/download';
+import { mergeNotes, normalizeNotes, setNote, type Notes } from './lib/notes';
 import {
   buildQuestionMap,
   bundledStoredBank,
   createNextQuestionId,
   getOrderedOptions,
-  getQuestionWarnings,
   loadQuestionBank,
   serializeQuestionBank,
-  validateQuestion,
-  validateQuestionBank,
   type StoredQuestionBank,
 } from './lib/questionBank';
+import { createEmptyQuestionForm, questionToForm } from './lib/questionForm';
 import {
-  applyAiReviewToForm,
-  createEmptyQuestionForm,
-  formToQuestion,
-  questionToForm,
-  snapshotOptions,
-  type ApplyAiReviewMode,
-  type QuestionFormState,
-} from './lib/questionForm';
-import {
+  addAttempt,
   createHistoryBackup,
   mergeAttempts,
   normalizeStoredAttempts,
   parseHistoryBackup,
 } from './lib/history';
 import {
-  MAX_SAVED_ATTEMPTS,
   buildAttempt,
   countAnswered,
   createSession,
@@ -60,9 +51,12 @@ import {
 } from './lib/session';
 import {
   DEFAULT_FOCUS_SESSION_SIZE,
+  getExamTrend,
   getFlaggedQuestionIds,
   getMistakeQuestionIds,
   getQuestionStats,
+  getTopicStats,
+  getTopics,
   getWeakQuestionIds,
 } from './lib/stats';
 import {
@@ -70,6 +64,7 @@ import {
   ATTEMPTS_KEY,
   EXAM_SETTINGS_KEY,
   LEGACY_QUESTION_BANK_KEY,
+  NOTES_KEY,
   QUESTION_BANK_KEY,
   loadJson,
   removeStoredKey,
@@ -103,6 +98,17 @@ function App() {
     () => normalizeStoredAttempts(loadJson<unknown>(ATTEMPTS_KEY, [])),
     { onSaveError: reportStorageError },
   );
+  const [notes, setNotes] = usePersistentState<Notes>(
+    NOTES_KEY,
+    () => normalizeNotes(loadJson<unknown>(NOTES_KEY, null)),
+    { onSaveError: reportStorageError },
+  );
+
+  // Stable, so saving a note redraws only the result card it belongs to.
+  const changeNote = useCallback(
+    (questionId: string, text: string) => setNotes((current) => setNote(current, questionId, text)),
+    [setNotes],
+  );
 
   const questionBank = storedBank.questions;
   const bundledUpdateAvailable =
@@ -110,6 +116,7 @@ function App() {
   const questionById = useMemo(() => buildQuestionMap(questionBank), [questionBank]);
   const [session, dispatchSession] = useSession(questionById, reportStorageError);
 
+  /** The attempt on the results screen: the one just finished, or one opened from history. */
   const [latestAttempt, setLatestAttempt] = useState<Attempt | null>(null);
   const { screen, navigate, goBack } = useScreenHistory(
     () => (session ? 'session' : 'home'),
@@ -124,10 +131,6 @@ function App() {
   );
   /** Where Settings goes back to when it was opened directly (for example after a reload). */
   const [settingsReturnScreen, setSettingsReturnScreen] = useState<Screen>('home');
-  const [questionForm, setQuestionForm] = useState<QuestionFormState>(createEmptyQuestionForm);
-  const [formErrors, setFormErrors] = useState<string[]>([]);
-  const [formWarnings, setFormWarnings] = useState<string[]>([]);
-  const ai = useAskAi();
   const batchAi = useBatchAskAi();
   const offline = useOfflineStatus();
 
@@ -156,6 +159,12 @@ function App() {
         : [],
     [questionBank, questionStats, examSettings.questionCount],
   );
+  const topics = useMemo(() => getTopics(questionBank), [questionBank]);
+  const topicScores = useMemo(
+    () => getTopicStats(questionBank, questionStats),
+    [questionBank, questionStats],
+  );
+  const examTrend = useMemo(() => getExamTrend(attempts), [attempts]);
 
   const openSettings = (returnTo: Screen) => {
     setSettingsReturnScreen(returnTo);
@@ -184,7 +193,10 @@ function App() {
     const settings = chosen
       ? { ...examSettings, questionCount: 0, timeLimitMinutes: 0 }
       : examSettings;
-    dispatchSession({ type: 'start', session: createSession(mode, questions, settings) });
+    dispatchSession({
+      type: 'start',
+      session: createSession(mode, questions, settings, new Date(), Boolean(chosen)),
+    });
     setLatestAttempt(null);
     // From results, replace that entry: its attempt is cleared, so going back to it would only
     // show home.
@@ -218,7 +230,7 @@ function App() {
     }
 
     const attempt = buildAttempt(session, questionById, scoredIds, new Date(), timedOut);
-    setAttempts((current) => [attempt, ...current].slice(0, MAX_SAVED_ATTEMPTS));
+    setAttempts((current) => addAttempt(current, attempt));
     setLatestAttempt(attempt);
     dispatchSession({ type: 'clear' });
 
@@ -252,23 +264,42 @@ function App() {
 
   const exportHistory = () => {
     const date = new Date().toISOString().slice(0, 10);
-    downloadJson(`mock-exam-history-${date}.json`, createHistoryBackup(attempts));
+    downloadJson(`mock-exam-history-${date}.json`, createHistoryBackup(attempts, notes));
   };
+
+  /** Opens the full results of an attempt from the history. */
+  const viewAttempt = (attempt: Attempt) => {
+    setLatestAttempt(attempt);
+    navigate('results');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const practiceTopic = (topic: string) =>
+    startSession(
+      'practice',
+      questionBank.filter((question) => question.topic === topic).map((question) => question.id),
+    );
 
   const importHistory = async (file: File) => {
     try {
-      const { attempts: imported, skipped } = parseHistoryBackup(JSON.parse(await file.text()));
-      const merged = mergeAttempts(attempts, imported, MAX_SAVED_ATTEMPTS);
-      const notes = [
+      const {
+        attempts: imported,
+        notes: importedNotes,
+        skipped,
+      } = parseHistoryBackup(JSON.parse(await file.text()));
+      const merged = mergeAttempts(attempts, imported);
+      const mergedNotes = mergeNotes(notes, importedNotes);
+      const messages = [
         `Added ${merged.added} of ${imported.length} attempts.`,
         imported.length - merged.added > 0 &&
-          'The rest were already in your history, or older than the newest ' +
-            `${MAX_SAVED_ATTEMPTS} attempts that are kept.`,
+          'The rest were already in your history, or older than the attempts that are kept.',
+        mergedNotes.added > 0 && `Added ${mergedNotes.added} notes.`,
         skipped > 0 && `${skipped} unreadable entries were skipped.`,
       ].filter(Boolean);
 
       setAttempts(merged.attempts);
-      window.alert(notes.join(' '));
+      setNotes(mergedNotes.notes);
+      window.alert(messages.join(' '));
     } catch (error) {
       window.alert(
         error instanceof SyntaxError
@@ -302,42 +333,18 @@ function App() {
     });
   };
 
+  const editor = useQuestionEditor({
+    questionBank,
+    aiSettings,
+    saveQuestionBank,
+    navigate,
+    goBack,
+    openSettings,
+  });
+  const bankImport = useBankImport(questionBank, saveQuestionBank);
+
   const restoreBundledQuestionBank = () => {
     applyQuestionBank(bundledStoredBank(BUNDLED_BANK));
-  };
-
-  const openQuestionForm = (form: QuestionFormState) => {
-    ai.cancel();
-    setQuestionForm(form);
-    setFormErrors([]);
-    setFormWarnings([]);
-    navigate('question-form');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const closeQuestionForm = () => {
-    ai.cancel();
-    goBack('bank');
-  };
-
-  const saveQuestion = (form: QuestionFormState) => {
-    const nextQuestion = formToQuestion(form, form.id ?? createNextQuestionId(questionBank));
-    const errors = validateQuestion(nextQuestion);
-    const warnings = getQuestionWarnings(nextQuestion);
-
-    setFormErrors(errors);
-    setFormWarnings(warnings);
-
-    if (errors.length) {
-      return;
-    }
-
-    const nextQuestions = form.id
-      ? questionBank.map((question) => (question.id === form.id ? nextQuestion : question))
-      : [...questionBank, nextQuestion];
-
-    saveQuestionBank(nextQuestions);
-    closeQuestionForm();
   };
 
   const duplicateQuestion = (question: Question) => {
@@ -356,8 +363,8 @@ function App() {
     }
 
     saveQuestionBank(questionBank.filter((question) => question.id !== questionId));
-    if (screen === 'question-form' && questionForm.id === questionId) {
-      closeQuestionForm();
+    if (screen === 'question-form' && editor.form.id === questionId) {
+      editor.close();
     }
   };
 
@@ -375,48 +382,6 @@ function App() {
   };
 
   const exportQuestionBank = () => downloadJson('questions.json', questionBank);
-
-  const importQuestionBank = async (file: File) => {
-    try {
-      const text = await file.text();
-      const imported = validateQuestionBank(JSON.parse(text));
-
-      if (
-        !window.confirm(
-          `Replace the current ${questionBank.length} questions with ${imported.length} imported questions?`,
-        )
-      ) {
-        return;
-      }
-
-      saveQuestionBank(imported);
-      window.alert(`Imported ${imported.length} questions.`);
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not import the selected file.');
-    }
-  };
-
-  const askAiForCurrentQuestion = () => {
-    if (!aiSettings.apiKey.trim()) {
-      ai.setError('Add your OpenRouter API key in AI Settings first.');
-      openSettings('question-form');
-      return;
-    }
-
-    const candidateQuestion = formToQuestion(
-      questionForm,
-      questionForm.id ?? createNextQuestionId(questionBank),
-    );
-    const requiredErrors = validateQuestion(candidateQuestion);
-
-    if (requiredErrors.length) {
-      setFormErrors(requiredErrors);
-      return;
-    }
-
-    setFormErrors([]);
-    void ai.ask(candidateQuestion, aiSettings, snapshotOptions(questionForm.optionTexts));
-  };
 
   const pendingExplanationQuestions = useMemo(
     () => questionBank.filter(needsExplanations),
@@ -458,23 +423,6 @@ function App() {
     }
 
     void batchAi.start(pendingExplanationQuestions, aiSettings, applyBatchReview);
-  };
-
-  const applyAiReview = (mode: ApplyAiReviewMode) => {
-    if (!ai.review) {
-      return;
-    }
-
-    const next = applyAiReviewToForm(questionForm, ai.review, mode, new Date().toLocaleString());
-
-    if (!next) {
-      window.alert(
-        'The answer options changed after this AI review. Ask AI again before applying.',
-      );
-      return;
-    }
-
-    setQuestionForm(next);
   };
 
   return (
@@ -521,11 +469,15 @@ function App() {
             mistakeCount={mistakeIds.length}
             flaggedCount={flaggedIds.length}
             focusCount={focusIds.length}
+            topicScores={topicScores}
+            trend={examTrend}
             onContinue={() => navigate('session')}
             onStart={(mode) => startSession(mode)}
             onPracticeMistakes={() => startSession('practice', mistakeIds)}
             onPracticeFlagged={() => startSession('practice', flaggedIds)}
             onPracticeFocus={() => startSession('practice', focusIds)}
+            onPracticeTopic={practiceTopic}
+            onViewAttempt={viewAttempt}
             onOpenBank={() => navigate('bank')}
             onOpenSettings={() => openSettings('home')}
             onClearHistory={clearHistory}
@@ -549,6 +501,8 @@ function App() {
           answeredCount={answeredCount}
           submittedCount={session.submittedQuestionIds.length}
           remainingMs={remainingMs}
+          note={notes[currentQuestion.id] ?? ''}
+          onNoteChange={(text) => changeNote(currentQuestion.id, text)}
           onSelect={(optionId) =>
             dispatchSession({ type: 'select', question: currentQuestion, optionId })
           }
@@ -583,6 +537,9 @@ function App() {
         <ResultsView
           attempt={latestAttempt}
           questionById={questionById}
+          notes={notes}
+          targetScorePercent={examSettings.targetScorePercent}
+          onNoteChange={changeNote}
           retryCount={getWrongQuestionIds(latestAttempt, questionById).length}
           flaggedCount={getFlaggedResultIds(latestAttempt, questionById).length}
           onHome={() => goBack('home')}
@@ -602,6 +559,10 @@ function App() {
           questions={questionBank}
           questionById={questionById}
           stats={questionStats}
+          notes={notes}
+          importPlan={bankImport.plan}
+          onApplyImport={bankImport.apply}
+          onCancelImport={bankImport.cancel}
           pendingExplanationCount={pendingExplanationQuestions.length}
           batch={batchAi.state}
           onStartBatch={startBatchAskAi}
@@ -609,11 +570,11 @@ function App() {
           onDismissBatch={batchAi.dismiss}
           defaultCount={BUNDLED_BANK.questions.length}
           onBack={() => goBack('home')}
-          onAdd={() => openQuestionForm(createEmptyQuestionForm())}
-          onEdit={(question) => openQuestionForm(questionToForm(question))}
+          onAdd={() => editor.open(createEmptyQuestionForm())}
+          onEdit={(question) => editor.open(questionToForm(question))}
           onDuplicate={duplicateQuestion}
           onDelete={deleteQuestion}
-          onImport={importQuestionBank}
+          onImport={bankImport.chooseFile}
           onExport={exportQuestionBank}
           onReset={resetQuestionBank}
         />
@@ -621,19 +582,20 @@ function App() {
 
       {screen === 'question-form' && (
         <QuestionFormView
-          form={questionForm}
-          errors={formErrors}
-          warnings={formWarnings}
+          form={editor.form}
+          errors={editor.errors}
+          warnings={editor.warnings}
           aiSettings={aiSettings}
-          aiStatus={ai.status}
-          aiReview={ai.review}
-          onChange={setQuestionForm}
-          onCancel={closeQuestionForm}
-          onSave={saveQuestion}
-          onDelete={questionForm.id ? deleteQuestion : undefined}
-          onAskAi={askAiForCurrentQuestion}
-          onApplyAiReview={applyAiReview}
-          onDismissAiReview={ai.dismissReview}
+          aiStatus={editor.aiStatus}
+          aiReview={editor.aiReview}
+          topics={topics}
+          onChange={editor.setForm}
+          onCancel={editor.close}
+          onSave={editor.save}
+          onDelete={editor.form.id ? deleteQuestion : undefined}
+          onAskAi={editor.askAi}
+          onApplyAiReview={editor.applyAiReview}
+          onDismissAiReview={editor.dismissAiReview}
           onOpenAiSettings={() => openSettings('question-form')}
         />
       )}

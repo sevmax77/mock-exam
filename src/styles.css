@@ -1089,3 +1089,281 @@ code {
     display: block;
   }
 }
+
+/* Filter buttons above the review and results lists. */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.filter-chip {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted-strong);
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.filter-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--selected-bg);
+  color: var(--accent-text);
+}
+
+.filter-count {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+/* Personal note under a question's explanations. */
+.question-note {
+  margin-top: 16px;
+}
+
+.question-note textarea {
+  /* Grows with the text where the browser supports it; otherwise a fixed two-line box. */
+  field-sizing: content;
+  min-height: 4.2em;
+}
+
+.target-note {
+  margin: 0 0 18px;
+  border: 1px solid var(--warning-border);
+  border-radius: 14px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 12px 14px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.target-note.target-reached {
+  border-color: var(--success-border-soft);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.target-chip {
+  margin-left: 10px;
+  color: var(--warning-text);
+  font-size: 0.85rem;
+}
+
+.target-chip.target-reached {
+  color: var(--success-text);
+}
+
+.history-item .secondary-button {
+  margin-bottom: 4px;
+}
+
+.history-note {
+  margin: 16px 0 0;
+}
+
+/* Topics */
+.topic-panel {
+  margin-bottom: 20px;
+}
+
+.topic-panel h3 {
+  margin: 0 0 10px;
+}
+
+.topic-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.topic-table th,
+.topic-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 8px 10px 0;
+  text-align: left;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.topic-table thead th {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.topic-table tbody th {
+  font-weight: 800;
+}
+
+.topic-table tbody th small {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.topic-table td:last-child {
+  padding-right: 0;
+}
+
+.topic-table td:has(button) {
+  text-align: right;
+}
+
+.topic-table button {
+  padding: 8px 14px;
+}
+
+/* Import decision panel in the question bank. */
+.import-plan {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.import-plan h3,
+.import-plan ul,
+.import-plan p {
+  margin: 0;
+}
+
+.import-plan ul {
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+/* Exam score trend. Lines stretch with the plot; labels and points are HTML so they keep size. */
+.score-trend {
+  margin: 4px 0 22px;
+}
+
+.score-trend figcaption {
+  margin-bottom: 14px;
+  color: var(--text-muted-strong);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.trend-plot {
+  position: relative;
+  height: 150px;
+  margin: 0 44px 8px 40px;
+}
+
+.trend-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.trend-plot line,
+.trend-plot polyline {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.trend-target {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.trend-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trend-axis-label,
+.trend-target-label,
+.trend-last-label {
+  position: absolute;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.trend-axis-label {
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+
+.trend-target-label {
+  left: 4px;
+  transform: translateY(calc(-100% - 4px));
+}
+
+.trend-last-label {
+  left: calc(100% + 10px);
+  transform: translateY(-50%);
+  color: var(--text-strong);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+/* The button is a hit target larger than the dot it holds. */
+.trend-point {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+  transform: translate(-50%, -50%);
+}
+
+.trend-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-sizing: content-box;
+}
+
+.trend-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 0;
+  z-index: 2;
+  display: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted-strong);
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
+}
+
+.trend-tip strong {
+  color: var(--text-strong);
+}
+
+.trend-point-right .trend-tip {
+  right: 0;
+  left: auto;
+}
+
+.trend-point:hover .trend-tip,
+.trend-point:focus-visible .trend-tip {
+  display: block;
+}

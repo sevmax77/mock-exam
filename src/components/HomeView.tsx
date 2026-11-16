@@ -1,6 +1,8 @@
 import type { Attempt, Question, SavedExamState, SessionMode } from '../types';
 import type { ExamSettings } from '../lib/session';
+import type { TopicScore, TrendPoint } from '../lib/stats';
 import { History } from './History';
+import { TopicScores } from './TopicScores';
 
 type HomeViewProps = {
   session: SavedExamState | null;
@@ -14,11 +16,17 @@ type HomeViewProps = {
   flaggedCount: number;
   /** Size of a focus session; 0 hides the card (no history yet). */
   focusCount: number;
+  /** History score per topic; empty when the bank has no topics. */
+  topicScores: TopicScore[];
+  /** Full exams, oldest first, for the trend chart. */
+  trend: TrendPoint[];
   onContinue: () => void;
   onStart: (mode: SessionMode) => void;
   onPracticeMistakes: () => void;
   onPracticeFlagged: () => void;
   onPracticeFocus: () => void;
+  onPracticeTopic: (topic: string) => void;
+  onViewAttempt: (attempt: Attempt) => void;
   onOpenBank: () => void;
   onOpenSettings: () => void;
   onClearHistory: () => void;
@@ -48,11 +56,15 @@ export function HomeView({
   mistakeCount,
   flaggedCount,
   focusCount,
+  topicScores,
+  trend,
   onContinue,
   onStart,
   onPracticeMistakes,
   onPracticeFlagged,
   onPracticeFocus,
+  onPracticeTopic,
+  onViewAttempt,
   onOpenBank,
   onOpenSettings,
   onClearHistory,
@@ -123,16 +135,28 @@ export function HomeView({
         </button>
         <button className="mode-card" onClick={onOpenSettings}>
           <span>Settings</span>
-          <strong>Session size, timer, Ask AI</strong>
+          <strong>Session size, timer, target, Ask AI</strong>
           <small>
-            Control question count, exam time limit, shuffling, and OpenRouter configuration.
+            Control question count, exam time limit, target score, shuffling, and OpenRouter
+            configuration.
           </small>
         </button>
       </section>
 
+      {topicScores.length > 0 && (
+        <section className="panel topic-panel">
+          <p className="eyebrow">From your saved history</p>
+          <h2>Topics</h2>
+          <TopicScores scores={topicScores} onPractice={onPracticeTopic} />
+        </section>
+      )}
+
       <History
         attempts={attempts}
         questionById={questionById}
+        trend={trend}
+        targetScorePercent={examSettings.targetScorePercent}
+        onView={onViewAttempt}
         onClear={onClearHistory}
         onExport={onExportHistory}
         onImport={onImportHistory}

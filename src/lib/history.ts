@@ -1,4 +1,6 @@
 import type { Attempt, QuestionResult } from '../types';
+import { normalizeNotes, type Notes } from './notes';
+import { MAX_SAVED_ATTEMPTS, MAX_SAVED_DRILLS } from './session';
 
 export const HISTORY_BACKUP_FORMAT = 'mock-exam-history';
 
@@ -7,14 +9,21 @@ export type HistoryBackup = {
   version: 1;
   exportedAt: string;
   attempts: Attempt[];
+  /** Personal notes by question id. Absent in backups made before notes existed. */
+  notes?: Notes;
 };
 
-export function createHistoryBackup(attempts: Attempt[], now: Date = new Date()): HistoryBackup {
+export function createHistoryBackup(
+  attempts: Attempt[],
+  notes: Notes = {},
+  now: Date = new Date(),
+): HistoryBackup {
   return {
     format: HISTORY_BACKUP_FORMAT,
     version: 1,
     exportedAt: now.toISOString(),
     attempts,
+    ...(Object.keys(notes).length ? { notes } : {}),
   };
 }
 
@@ -79,6 +88,7 @@ export function normalizeAttempt(value: unknown): Attempt | null {
     wrongCount: valid.length - correctCount,
     results: valid,
     ...(value.timedOut === true ? { timedOut: true } : {}),
+    ...(value.drill === true ? { drill: true } : {}),
   };
 }
 
@@ -91,10 +101,15 @@ export function normalizeStoredAttempts(value: unknown): Attempt[] {
 
 /**
  * Reads a history backup file. Also accepts a bare array of attempts. Throws when the file has
- * no usable attempts; `skipped` counts the entries that couldn't be read.
+ * no usable attempts or notes; `skipped` counts the entries that couldn't be read.
  */
-export function parseHistoryBackup(data: unknown): { attempts: Attempt[]; skipped: number } {
+export function parseHistoryBackup(data: unknown): {
+  attempts: Attempt[];
+  notes: Notes;
+  skipped: number;
+} {
   let entries: unknown[];
+  let notes: Notes = {};
 
   if (Array.isArray(data)) {
     entries = data;
@@ -104,27 +119,52 @@ export function parseHistoryBackup(data: unknown): { attempts: Attempt[]; skippe
     Array.isArray(data.attempts)
   ) {
     entries = data.attempts;
+    notes = normalizeNotes(data.notes);
   } else {
     throw new Error('This file is not a Mock Exam history backup.');
   }
 
   const attempts = normalizeStoredAttempts(entries);
 
-  if (!attempts.length) {
+  if (!attempts.length && !Object.keys(notes).length) {
     throw new Error('The backup has no attempts that can be imported.');
   }
 
-  return { attempts, skipped: entries.length - attempts.length };
+  return { attempts, notes, skipped: entries.length - attempts.length };
 }
 
 /**
- * Adds imported attempts to the history, skipping ones already there, and keeps the newest `max`.
- * Returns the merged history (newest first) and how many imported attempts made it in.
+ * Applies the history caps to attempts sorted newest first: the newest `maxFull` full sessions
+ * and the newest `maxDrills` drills are kept. The two are counted separately, so short drills
+ * never push full exams (and the per-question stats they carry) out of the history.
+ */
+export function pruneAttempts(
+  attempts: Attempt[],
+  maxFull: number = MAX_SAVED_ATTEMPTS,
+  maxDrills: number = MAX_SAVED_DRILLS,
+): Attempt[] {
+  let full = 0;
+  let drills = 0;
+
+  return attempts.filter((attempt) =>
+    attempt.drill ? (drills += 1) <= maxDrills : (full += 1) <= maxFull,
+  );
+}
+
+/** Adds a just-finished attempt to the front of the history and applies the caps. */
+export function addAttempt(attempts: Attempt[], attempt: Attempt): Attempt[] {
+  return pruneAttempts([attempt, ...attempts]);
+}
+
+/**
+ * Adds imported attempts to the history, skipping ones already there, and applies the history
+ * caps. Returns the merged history (newest first) and how many imported attempts made it in.
  */
 export function mergeAttempts(
   existing: Attempt[],
   imported: Attempt[],
-  max: number,
+  maxFull: number = MAX_SAVED_ATTEMPTS,
+  maxDrills: number = MAX_SAVED_DRILLS,
 ): { attempts: Attempt[]; added: number } {
   const known = new Set(existing.map((attempt) => attempt.id));
   const fresh: Attempt[] = [];
@@ -137,9 +177,11 @@ export function mergeAttempts(
   }
 
   const freshIds = new Set(fresh.map((attempt) => attempt.id));
-  const attempts = [...existing, ...fresh]
-    .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
-    .slice(0, max);
+  const attempts = pruneAttempts(
+    [...existing, ...fresh].sort((a, b) => b.completedAt.localeCompare(a.completedAt)),
+    maxFull,
+    maxDrills,
+  );
 
   return {
     attempts,

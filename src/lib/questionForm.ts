@@ -11,6 +11,7 @@ export type QuestionFormState = {
   optionExplanations: string[];
   correctIndexes: number[];
   summary: string;
+  topic: string;
 };
 
 export type ApplyAiReviewMode = 'replace-all' | 'replace-explanation' | 'merge-explanation';
@@ -23,6 +24,7 @@ export function createEmptyQuestionForm(): QuestionFormState {
     optionExplanations: ['', '', '', ''],
     correctIndexes: [],
     summary: '',
+    topic: '',
   };
 }
 
@@ -37,6 +39,7 @@ export function questionToForm(question: Question): QuestionFormState {
       .map((id) => question.options.findIndex((option) => option.id === id))
       .filter((index) => index >= 0),
     summary: question.summary ?? '',
+    topic: question.topic ?? '',
   };
 }
 
@@ -81,6 +84,7 @@ export function formToQuestion(form: QuestionFormState, fallbackId: string): Que
       .sort((a, b) => a - b)
       .map((index) => options[index].id),
     summary: form.summary.trim(),
+    ...(form.topic.trim() ? { topic: form.topic.trim() } : {}),
   };
 }
 

@@ -91,6 +91,7 @@ All arguments are optional:
 | `question_id` | string | Return this specific question instead of a random one. |
 | `multi_answer_only` | boolean | Pick only select-all-that-apply questions. |
 | `exclude_ids` | string[] | Skip these ids, e.g. questions already asked in this quiz. |
+| `topic` | string | Pick only questions with this topic (case-insensitive). |
 
 Returns:
 

@@ -8,6 +8,14 @@ import { orderItems, shuffle } from './shuffle';
  */
 export const MAX_SAVED_ATTEMPTS = 50;
 
+/**
+ * Drills (sessions over chosen questions) have their own cap, so a run of short drills never
+ * pushes full exams and practice runs out of the history.
+ */
+export const MAX_SAVED_DRILLS = 50;
+
+export const DEFAULT_TARGET_SCORE_PERCENT = 75;
+
 export type ExamSettings = {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
@@ -15,6 +23,11 @@ export type ExamSettings = {
   questionCount: number;
   /** Exam mode time limit in minutes. 0 means untimed. Practice is never timed. */
   timeLimitMinutes: number;
+  /**
+   * The score to aim for in exam mode, as a percentage of questions answered correctly. 0 turns
+   * the target off. It is a personal target, not the real exam's (often scaled) passing score.
+   */
+  targetScorePercent: number;
 };
 
 export const DEFAULT_EXAM_SETTINGS: ExamSettings = {
@@ -22,6 +35,7 @@ export const DEFAULT_EXAM_SETTINGS: ExamSettings = {
   shuffleOptions: true,
   questionCount: 0,
   timeLimitMinutes: 0,
+  targetScorePercent: DEFAULT_TARGET_SCORE_PERCENT,
 };
 
 /** Fills in defaults and repairs invalid numbers in settings loaded from storage. */
@@ -38,6 +52,13 @@ export function normalizeExamSettings(stored: Partial<ExamSettings> | null): Exa
     shuffleOptions: settings.shuffleOptions !== false,
     questionCount: wholeNumber(settings.questionCount),
     timeLimitMinutes: wholeNumber(settings.timeLimitMinutes),
+    // 0 is a valid choice here (no target), so only a missing or invalid value gets the default.
+    targetScorePercent:
+      typeof settings.targetScorePercent === 'number' &&
+      Number.isFinite(settings.targetScorePercent) &&
+      settings.targetScorePercent >= 0
+        ? Math.min(100, Math.floor(settings.targetScorePercent))
+        : DEFAULT_TARGET_SCORE_PERCENT,
   };
 }
 
@@ -46,6 +67,7 @@ export function createSession(
   bank: Question[],
   examSettings: ExamSettings,
   now: Date = new Date(),
+  drill = false,
 ): SavedExamState {
   // A smaller session is a random sample; it keeps bank order unless questions are shuffled.
   const { questionCount, timeLimitMinutes } = examSettings;
@@ -81,6 +103,7 @@ export function createSession(
     ...(mode === 'exam' && timeLimitMinutes > 0
       ? { deadline: new Date(now.getTime() + timeLimitMinutes * 60_000).toISOString() }
       : {}),
+    ...(drill ? { drill: true } : {}),
   };
 }
 
@@ -280,6 +303,7 @@ export function buildAttempt(
     wrongCount: score.wrongCount,
     results,
     ...(timedOut ? { timedOut: true } : {}),
+    ...(session.drill ? { drill: true } : {}),
   };
 }
 

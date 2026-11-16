@@ -6,3 +6,6 @@ dist
 .cert
 
 src/data/questions.json
+
+# Output of local browser checks
+.playwright-mcp

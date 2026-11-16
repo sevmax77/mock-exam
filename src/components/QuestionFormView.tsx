@@ -21,6 +21,8 @@ type QuestionFormViewProps = {
   aiSettings: AiSettings;
   aiStatus: AiStatus;
   aiReview: AiReview | null;
+  /** Topics already used in the bank, offered as suggestions. */
+  topics: string[];
   onChange: (form: QuestionFormState) => void;
   onCancel: () => void;
   onSave: (form: QuestionFormState) => void;
@@ -38,6 +40,7 @@ export function QuestionFormView({
   aiSettings,
   aiStatus,
   aiReview,
+  topics,
   onChange,
   onCancel,
   onSave,
@@ -141,6 +144,25 @@ export function QuestionFormView({
             onChange={(event) => onChange({ ...form, question: event.target.value })}
             placeholder="Paste or type the question text"
           />
+        </label>
+
+        <label className="form-field">
+          <span>Topic (optional)</span>
+          <input
+            type="text"
+            list="question-topics"
+            value={form.topic}
+            onChange={(event) => onChange({ ...form, topic: event.target.value })}
+            placeholder="For example an exam domain"
+          />
+          <datalist id="question-topics">
+            {topics.map((topic) => (
+              <option key={topic} value={topic} />
+            ))}
+          </datalist>
+          <small className="field-hint">
+            Questions with the same topic are scored together and can be practiced as a group.
+          </small>
         </label>
 
         <div className="form-section-heading">

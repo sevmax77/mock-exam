@@ -120,14 +120,17 @@ mcp = MCPServer(
         "(single-answer) and some have two or more (select-all-that-apply); "
         "check the length of correct_option_ids to tell which kind it is. "
         "Optional arguments: question_id to fetch one specific question, "
-        "multi_answer_only to pick only select-all-that-apply questions, and "
-        "exclude_ids to avoid repeating questions already asked in this quiz."
+        "multi_answer_only to pick only select-all-that-apply questions, "
+        "exclude_ids to avoid repeating questions already asked in this quiz, "
+        "and topic to pick only questions with that topic (case-insensitive). "
+        "The result's topic is an empty string when the question has none."
     ),
 )
 def get_random_question(
     question_id: str | None = None,
     multi_answer_only: bool = False,
     exclude_ids: list[str] | None = None,
+    topic: str | None = None,
 ) -> dict[str, Any]:
     if question_id:
         question = QUESTIONS_BY_ID.get(question_id)
@@ -135,11 +138,13 @@ def get_random_question(
             raise ValueError(f"No question with id '{question_id}'")
     else:
         excluded = set(exclude_ids or [])
+        wanted_topic = (topic or "").strip().lower()
         candidates = [
             q
             for q in QUESTIONS
             if q["id"] not in excluded
             and (not multi_answer_only or len(q["correctOptionIds"]) > 1)
+            and (not wanted_topic or str(q.get("topic", "")).strip().lower() == wanted_topic)
         ]
         if not candidates:
             raise ValueError("No questions match the given filters")
@@ -158,6 +163,7 @@ def get_random_question(
         ],
         "correct_option_ids": question["correctOptionIds"],
         "summary": question.get("summary", ""),
+        "topic": question.get("topic", ""),
     }
 
 

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Attempt } from '../types';
 import {
   HISTORY_BACKUP_FORMAT,
+  addAttempt,
   createHistoryBackup,
   mergeAttempts,
   normalizeAttempt,
   normalizeStoredAttempts,
   parseHistoryBackup,
+  pruneAttempts,
 } from './history';
 
 const attempt = (id: string, completedAt: string, correct = [true, false]): Attempt => ({
@@ -33,6 +35,7 @@ const newest = attempt('3', '2026-03-03T00:00:00.000Z');
 describe('normalizeAttempt', () => {
   it('keeps valid attempts unchanged', () => {
     expect(normalizeAttempt(older)).toEqual(older);
+    expect(normalizeAttempt({ ...older, drill: true })).toHaveProperty('drill', true);
     expect(normalizeAttempt({ ...older, timedOut: true })).toHaveProperty('timedOut', true);
   });
 
@@ -61,17 +64,32 @@ describe('normalizeAttempt', () => {
 
 describe('parseHistoryBackup', () => {
   it('reads a backup made by createHistoryBackup', () => {
-    const backup = createHistoryBackup([newer, older], new Date('2026-03-05T00:00:00Z'));
+    const backup = createHistoryBackup([newer, older], {}, new Date('2026-03-05T00:00:00Z'));
     expect(backup).toMatchObject({ format: HISTORY_BACKUP_FORMAT, version: 1 });
     // Round-trip through JSON like a real file.
     expect(parseHistoryBackup(JSON.parse(JSON.stringify(backup)))).toEqual({
       attempts: [newer, older],
+      notes: {},
+      skipped: 0,
+    });
+    expect(backup).not.toHaveProperty('notes');
+  });
+
+  it('carries notes, and accepts a backup that has only notes', () => {
+    const backup = createHistoryBackup([], { q1: 'mixed up the two services' });
+    expect(parseHistoryBackup(JSON.parse(JSON.stringify(backup)))).toEqual({
+      attempts: [],
+      notes: { q1: 'mixed up the two services' },
       skipped: 0,
     });
   });
 
   it('accepts a bare array and counts skipped entries', () => {
-    expect(parseHistoryBackup([older, 'junk'])).toEqual({ attempts: [older], skipped: 1 });
+    expect(parseHistoryBackup([older, 'junk'])).toEqual({
+      attempts: [older],
+      notes: {},
+      skipped: 1,
+    });
   });
 
   it('rejects files that are not history backups', () => {
@@ -92,6 +110,47 @@ describe('mergeAttempts', () => {
     expect(mergeAttempts([newest, newer], [older], 2)).toEqual({
       attempts: [newest, newer],
       added: 0,
+    });
+  });
+});
+
+describe('history caps', () => {
+  const drill = (id: string, completedAt: string): Attempt => ({
+    ...attempt(id, completedAt),
+    mode: 'practice',
+    drill: true,
+  });
+  const drillA = drill('d1', '2026-03-04T00:00:00.000Z');
+  const drillB = drill('d2', '2026-03-05T00:00:00.000Z');
+  const drillC = drill('d3', '2026-03-06T00:00:00.000Z');
+
+  it('counts drills and full sessions separately', () => {
+    expect(pruneAttempts([drillC, drillB, drillA, newest, newer, older], 2, 1)).toEqual([
+      drillC,
+      newest,
+      newer,
+    ]);
+  });
+
+  it('never drops a full session because of newer drills', () => {
+    let history = [newest, newer, older];
+
+    for (let index = 0; index < 200; index += 1) {
+      history = addAttempt(
+        history,
+        drill(`d${index}`, new Date(Date.UTC(2026, 3, 1, 0, index)).toISOString()),
+      );
+    }
+
+    expect(history.filter((item) => !item.drill)).toEqual([newest, newer, older]);
+    expect(history.filter((item) => item.drill)).toHaveLength(50);
+    expect(history[0].id).toBe('d199');
+  });
+
+  it('applies both caps when merging an import', () => {
+    expect(mergeAttempts([newest, drillA], [older, newer, drillB, drillC], 2, 2)).toEqual({
+      attempts: [drillC, drillB, newest, newer],
+      added: 3,
     });
   });
 });

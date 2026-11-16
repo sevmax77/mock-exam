@@ -109,3 +109,85 @@ export function getWeakQuestionIds(
     .slice(0, count)
     .map((question) => question.id);
 }
+
+/** The topics used in the bank, in alphabetical order. */
+export function getTopics(bank: Question[]): string[] {
+  return [
+    ...new Set(bank.map((question) => question.topic).filter((topic) => topic !== undefined)),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+export type TopicScore = {
+  topic: string;
+  /** Questions counted: bank questions for history stats, scored questions for one attempt. */
+  questionCount: number;
+  /** Answers given. For one attempt this equals `questionCount`. */
+  answered: number;
+  correct: number;
+};
+
+/** Percentage of answers that were correct, or null when nothing was answered. */
+export function topicPercent(score: Pick<TopicScore, 'answered' | 'correct'>): number | null {
+  return score.answered ? Math.round((score.correct / score.answered) * 100) : null;
+}
+
+function collectTopicScores(
+  entries: Array<{ topic: string | undefined; answered: number; correct: number }>,
+): TopicScore[] {
+  const scores = new Map<string, TopicScore>();
+
+  for (const { topic, answered, correct } of entries) {
+    if (!topic) {
+      continue;
+    }
+
+    const score = scores.get(topic) ?? { topic, questionCount: 0, answered: 0, correct: 0 };
+    score.questionCount += 1;
+    score.answered += answered;
+    score.correct += correct;
+    scores.set(topic, score);
+  }
+
+  return [...scores.values()].sort((a, b) => a.topic.localeCompare(b.topic));
+}
+
+/** How each topic in the bank has gone across the saved history. Empty when no topics are set. */
+export function getTopicStats(bank: Question[], stats: Map<string, QuestionStats>): TopicScore[] {
+  return collectTopicScores(
+    bank.map((question) => {
+      const stat = stats.get(question.id);
+      return { topic: question.topic, answered: stat?.seen ?? 0, correct: stat?.correct ?? 0 };
+    }),
+  );
+}
+
+/** One attempt's score per topic. Questions without a topic, or deleted since, are left out. */
+export function getAttemptTopicScores(
+  attempt: Attempt,
+  questionById: Map<string, Question>,
+): TopicScore[] {
+  return collectTopicScores(
+    attempt.results.map((result) => ({
+      topic: questionById.get(result.questionId)?.topic,
+      answered: 1,
+      correct: result.isCorrect ? 1 : 0,
+    })),
+  );
+}
+
+export type TrendPoint = { id: string; completedAt: string; percent: number };
+
+/**
+ * Scores of full exams, oldest first, for the trend chart. Practice runs and drills are left out:
+ * their scores aren't comparable with an exam's.
+ */
+export function getExamTrend(attempts: Attempt[]): TrendPoint[] {
+  return attempts
+    .filter((attempt) => attempt.mode === 'exam' && !attempt.drill && attempt.totalQuestions > 0)
+    .map((attempt) => ({
+      id: attempt.id,
+      completedAt: attempt.completedAt,
+      percent: Math.round((attempt.correctCount / attempt.totalQuestions) * 100),
+    }))
+    .reverse();
+}

@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import type { Question } from '../types';
-import { sortByWeakness, type QuestionStats } from '../lib/stats';
+import type { Notes } from '../lib/notes';
+import type { BankImportMode, BankImportPlan } from '../lib/questionBank';
+import { getTopics, sortByWeakness, type QuestionStats } from '../lib/stats';
 import type { BatchState } from '../hooks/useBatchAskAi';
 import { BatchAskAiPanel } from './BatchAskAiPanel';
+import { ImportPlanPanel } from './ImportPlanPanel';
 
 type QuestionBankViewProps = {
   questions: Question[];
   questionById: Map<string, Question>;
   stats: Map<string, QuestionStats>;
+  notes: Notes;
+  /** A chosen import file waiting for a decision on how to bring it in. */
+  importPlan: BankImportPlan | null;
+  onApplyImport: (mode: BankImportMode) => void;
+  onCancelImport: () => void;
   /** Questions with empty or placeholder explanations. */
   pendingExplanationCount: number;
   batch: BatchState | null;
@@ -39,6 +47,10 @@ export function QuestionBankView({
   questions,
   questionById,
   stats,
+  notes,
+  importPlan,
+  onApplyImport,
+  onCancelImport,
   pendingExplanationCount,
   batch,
   onStartBatch,
@@ -56,14 +68,23 @@ export function QuestionBankView({
 }: QuestionBankViewProps) {
   const [search, setSearch] = useState('');
   const [weakestFirst, setWeakestFirst] = useState(false);
+  const [topicFilter, setTopicFilter] = useState('');
+  const topics = getTopics(questions);
+  // A topic that no longer exists (its last question was edited or deleted) stops filtering.
+  const activeTopic = topics.includes(topicFilter) ? topicFilter : '';
   const searchText = search.trim().toLowerCase();
-  const orderedQuestions = weakestFirst ? sortByWeakness(questions, stats) : questions;
+  const sortedQuestions = weakestFirst ? sortByWeakness(questions, stats) : questions;
+  const orderedQuestions = activeTopic
+    ? sortedQuestions.filter((question) => question.topic === activeTopic)
+    : sortedQuestions;
   const filteredQuestions = searchText
     ? orderedQuestions.filter((question) =>
         [
           question.id,
           question.question,
           question.summary,
+          question.topic ?? '',
+          notes[question.id] ?? '',
           ...question.options.flatMap((option) => [option.text, option.explanation]),
         ]
           .join(' ')
@@ -110,7 +131,7 @@ export function QuestionBankView({
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search question, option, or explanation"
+            placeholder="Search question, option, explanation, topic, or note"
           />
         </label>
         <label className="search-field">
@@ -123,6 +144,19 @@ export function QuestionBankView({
             <option value="weakest">Weakest first</option>
           </select>
         </label>
+        {topics.length > 0 && (
+          <label className="search-field">
+            <span>Topic</span>
+            <select value={activeTopic} onChange={(event) => setTopicFilter(event.target.value)}>
+              <option value="">All topics</option>
+              {topics.map((topic) => (
+                <option key={topic} value={topic}>
+                  {topic}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="toolbar-actions">
           <button className="primary-button" onClick={onAdd}>
             Add question
@@ -150,6 +184,15 @@ export function QuestionBankView({
         </div>
       </div>
 
+      {importPlan && (
+        <ImportPlanPanel
+          plan={importPlan}
+          currentCount={questions.length}
+          onApply={onApplyImport}
+          onCancel={onCancelImport}
+        />
+      )}
+
       <BatchAskAiPanel
         pendingCount={pendingExplanationCount}
         batch={batch}
@@ -175,8 +218,10 @@ export function QuestionBankView({
                     : `Choose ${question.correctOptionIds.length}`}
                 </span>
                 <span>{question.options.length} options</span>
+                {question.topic && <span>{question.topic}</span>}
                 <span>{describeStats(stats.get(question.id))}</span>
                 {stats.get(question.id)?.lastFlagged && <span className="flag-label">Flagged</span>}
+                {notes[question.id] && <span>Has note</span>}
               </div>
             </div>
             <div className="bank-card-actions">
@@ -194,7 +239,9 @@ export function QuestionBankView({
         ))}
       </div>
 
-      {!filteredQuestions.length && <p className="empty-note">No questions match your search.</p>}
+      {!filteredQuestions.length && (
+        <p className="empty-note">No questions match your search or topic.</p>
+      )}
     </section>
   );
 }
