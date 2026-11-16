@@ -177,3 +177,7 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 - Current session and the last 50 attempts are saved locally in `localStorage`. Export a history backup to move it to another device, and import it there; imported attempts are merged with the ones already saved.
 - Each screen has its own address (`#/bank`, `#/settings`, ...), so the browser's back and forward buttons move between screens and reloading the page stays on the same screen.
 - Long questions and options are formatted for comfortable reading on mobile, with a dark theme that follows the device setting.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
