@@ -10,6 +10,8 @@ export type Question = {
   options: QuestionOption[];
   correctOptionIds: string[];
   summary: string;
+  /** Exam domain or subject area, for per-topic scores and practice. Absent when not set. */
+  topic?: string;
 };
 
 export type SessionMode = 'exam' | 'practice';
@@ -35,6 +37,11 @@ export type Attempt = {
   results: QuestionResult[];
   /** True when an exam was submitted automatically because its time limit ran out. */
   timedOut?: boolean;
+  /**
+   * True for a session over chosen questions (retry wrong answers, mistakes, flagged, focus, one
+   * topic). Drills are kept in history separately from full sessions, so they never push them out.
+   */
+  drill?: boolean;
 };
 
 export type SavedExamState = {
@@ -48,4 +55,6 @@ export type SavedExamState = {
   flaggedQuestionIds: string[];
   /** ISO time when a timed exam is submitted automatically. Absent when untimed. */
   deadline?: string;
+  /** True for a session over chosen questions rather than the whole bank. See Attempt.drill. */
+  drill?: boolean;
 };

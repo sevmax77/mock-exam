@@ -57,3 +57,23 @@ export function scorePercentage(attempt: Attempt): number {
     ? Math.round((attempt.correctCount / attempt.totalQuestions) * 100)
     : 0;
 }
+
+/** "Exam", "Practice" or "Drill", as shown in the history and on results. */
+export function attemptLabel(attempt: Attempt): string {
+  return attempt.drill ? 'Drill' : attempt.mode === 'exam' ? 'Exam' : 'Practice';
+}
+
+/**
+ * Whether a full exam reached the target score. Null when there is no target, or for practice
+ * runs and drills, which aren't measured against it.
+ */
+export function targetOutcome(
+  attempt: Attempt,
+  targetScorePercent: number,
+): 'reached' | 'missed' | null {
+  if (targetScorePercent <= 0 || attempt.mode !== 'exam' || attempt.drill) {
+    return null;
+  }
+
+  return scorePercentage(attempt) >= targetScorePercent ? 'reached' : 'missed';
+}

@@ -1,10 +1,18 @@
 import type { Attempt, Question } from '../types';
 import { formatDate, truncate } from '../lib/format';
-import { scorePercentage } from '../lib/scoring';
+import { attemptLabel, scorePercentage, targetOutcome } from '../lib/scoring';
+import { MAX_SAVED_ATTEMPTS, MAX_SAVED_DRILLS } from '../lib/session';
+import type { TrendPoint } from '../lib/stats';
+import { ScoreTrend } from './ScoreTrend';
 
 type HistoryProps = {
   attempts: Attempt[];
   questionById: Map<string, Question>;
+  /** Full exams, oldest first, for the trend chart. */
+  trend: TrendPoint[];
+  /** Target score as a percentage; 0 means no target. */
+  targetScorePercent: number;
+  onView: (attempt: Attempt) => void;
   onClear: () => void;
   onExport: () => void;
   onImport: (file: File) => Promise<void>;
@@ -29,7 +37,16 @@ function ImportButton({ onImport }: { onImport: (file: File) => Promise<void> })
   );
 }
 
-export function History({ attempts, questionById, onClear, onExport, onImport }: HistoryProps) {
+export function History({
+  attempts,
+  questionById,
+  trend,
+  targetScorePercent,
+  onView,
+  onClear,
+  onExport,
+  onImport,
+}: HistoryProps) {
   if (!attempts.length) {
     return (
       <section className="panel">
@@ -60,24 +77,49 @@ export function History({ attempts, questionById, onClear, onExport, onImport }:
         </div>
       </div>
 
+      <ScoreTrend
+        points={trend}
+        targetPercent={targetScorePercent}
+        onOpen={(attemptId) => {
+          const attempt = attempts.find((item) => item.id === attemptId);
+          if (attempt) {
+            onView(attempt);
+          }
+        }}
+      />
+
       <div className="history-list">
         {attempts.map((attempt) => {
           const wrongQuestions = attempt.results.filter((result) => !result.isCorrect);
           const percentage = scorePercentage(attempt);
+          const outcome = targetOutcome(attempt, targetScorePercent);
 
           return (
             <details key={attempt.id} className="history-item">
               <summary>
                 <span>
-                  {attempt.mode === 'exam' ? 'Exam' : 'Practice'} -{' '}
-                  {formatDate(attempt.completedAt)}
+                  {attemptLabel(attempt)} - {formatDate(attempt.completedAt)}
                 </span>
-                <strong>{percentage}%</strong>
+                <strong>
+                  {percentage}%
+                  {outcome && (
+                    <span
+                      className={
+                        outcome === 'reached' ? 'target-chip target-reached' : 'target-chip'
+                      }
+                    >
+                      {outcome === 'reached' ? 'Target reached' : 'Below target'}
+                    </span>
+                  )}
+                </strong>
               </summary>
               <p>
                 Correct {attempt.correctCount}, wrong {attempt.wrongCount}, total{' '}
                 {attempt.totalQuestions}.{attempt.timedOut && ' Time ran out.'}
               </p>
+              <button className="secondary-button" onClick={() => onView(attempt)}>
+                View answers and explanations
+              </button>
               {wrongQuestions.length > 0 && (
                 <ul>
                   {wrongQuestions.map((result) => {
@@ -94,6 +136,12 @@ export function History({ attempts, questionById, onClear, onExport, onImport }:
           );
         })}
       </div>
+
+      <p className="field-hint history-note">
+        The newest {MAX_SAVED_ATTEMPTS} full exams and practice runs are kept, plus the newest{' '}
+        {MAX_SAVED_DRILLS} drills (retries, mistakes, flagged, focus and topic practice). Drills
+        never push full sessions out.
+      </p>
     </section>
   );
 }

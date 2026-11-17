@@ -116,12 +116,17 @@ export function normalizeImportedQuestion(item: unknown, index: number): Questio
     }
   }
 
+  const topic = typeof candidate.topic === 'string' ? candidate.topic.trim() : '';
+
   return {
     id: String(candidate.id || `q${String(index + 1).padStart(3, '0')}`),
     question: String(candidate.question || ''),
     options,
     correctOptionIds,
     summary: String(candidate.summary || legacyExplanation),
+    // Only written when set: the bundled bank's fingerprint is made from this object, so an
+    // always-present key would look like a new questions.json on devices with an edited bank.
+    ...(topic ? { topic } : {}),
   };
 }
 
@@ -199,6 +204,91 @@ export function createNextQuestionId(questions: Question[]): string {
   }, 0);
 
   return `q${String(maxNumber + 1).padStart(3, '0')}`;
+}
+
+/** Question text reduced to what identifies it: case and spacing are ignored. */
+function questionKey(question: Question): string {
+  return question.question.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export type BankImportMode = 'add-new' | 'add-and-update' | 'replace';
+
+/**
+ * What importing a file into the current bank would do. Questions are matched by their text, not
+ * by id: ids are often just positions (q001, q002, ...), so two unrelated banks share them.
+ */
+export type BankImportPlan = {
+  imported: Question[];
+  /** Questions whose text is not in the bank yet. */
+  added: Question[];
+  /** Questions already in the bank whose answers, options, explanations or topic differ. */
+  changed: Question[];
+  /** Questions already in the bank with identical content. */
+  unchangedCount: number;
+};
+
+export function planBankImport(existing: Question[], imported: Question[]): BankImportPlan {
+  const existingByKey = new Map(existing.map((question) => [questionKey(question), question]));
+  const seen = new Set<string>();
+  const plan: BankImportPlan = { imported, added: [], changed: [], unchangedCount: 0 };
+
+  for (const question of imported) {
+    const key = questionKey(question);
+
+    // A question repeated inside the file counts once.
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    const match = existingByKey.get(key);
+
+    if (!match) {
+      plan.added.push(question);
+    } else if (JSON.stringify({ ...question, id: match.id }) === JSON.stringify(match)) {
+      plan.unchangedCount += 1;
+    } else {
+      plan.changed.push(question);
+    }
+  }
+
+  return plan;
+}
+
+/**
+ * The bank after an import. New questions keep their id unless it is taken, in which case they
+ * get the next free one. Updated questions keep the id they already have in the bank, so saved
+ * history and notes stay attached to them.
+ */
+export function applyBankImport(
+  existing: Question[],
+  plan: BankImportPlan,
+  mode: BankImportMode,
+): Question[] {
+  if (mode === 'replace') {
+    return plan.imported;
+  }
+
+  let result = existing;
+
+  if (mode === 'add-and-update') {
+    const changedByKey = new Map(plan.changed.map((question) => [questionKey(question), question]));
+    result = existing.map((question) => {
+      const update = changedByKey.get(questionKey(question));
+      return update ? { ...update, id: question.id } : question;
+    });
+  }
+
+  result = [...result];
+  const usedIds = new Set(result.map((question) => question.id));
+
+  for (const question of plan.added) {
+    const id = usedIds.has(question.id) ? createNextQuestionId(result) : question.id;
+    usedIds.add(id);
+    result.push({ ...question, id });
+  }
+
+  return result;
 }
 
 export function buildQuestionMap(questions: Question[]): Map<string, Question> {

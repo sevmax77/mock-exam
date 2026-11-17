@@ -109,3 +109,14 @@ describe('applyAiReviewToForm', () => {
     expect(merged?.correctIndexes).toEqual([0]);
   });
 });
+
+describe('topic in the form', () => {
+  it('round-trips, and a blank topic is not written', () => {
+    const question = { ...makeQuestion('q1'), topic: 'Security' };
+    const form = questionToForm(question);
+    expect(form.topic).toBe('Security');
+    expect(formToQuestion(form, 'unused')).toEqual(question);
+    expect(formToQuestion({ ...form, topic: '  ' }, 'unused')).not.toHaveProperty('topic');
+    expect(createEmptyQuestionForm().topic).toBe('');
+  });
+});

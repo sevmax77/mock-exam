@@ -145,11 +145,14 @@ Each question uses this shape:
     }
   ],
   "correctOptionIds": ["B"],
-  "summary": "Optional overall conclusion or references."
+  "summary": "Optional overall conclusion or references.",
+  "topic": "Optional exam domain or subject area"
 }
 ```
 
 Use one ID in `correctOptionIds` for a single-answer question. Use two or more IDs for a multi-answer question. Every option should have its own explanation so review text stays attached to the option even when answers are shuffled.
+
+`topic` is optional. Questions that share a topic are scored together and can be practiced as a group. The sample questions have no topics; set one in the question form, or add the field to your JSON. Nothing topic-related is shown until at least one question has a topic.
 
 ## Scripts
 
@@ -158,7 +161,7 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 | `npm run import:pdf` | Extracts questions from the PDF in `src/data/` into `src/data/questions.imported.json` (legacy format). Never overwrites an existing file unless you pass `-- --force`. Page markers are always removed; list any other lines to drop (such as a publisher's watermark) as regular expressions, one per line, in `src/data/import-strip-patterns.local`, which is not committed, or pass `-- --strip-patterns <file>`. |
 | `npm run migrate:explanations -- <input.json>` | Converts legacy questions to per-option explanations, writing `<input>.migrated.json`. |
 | `npm run generate:icons` | Regenerates the PNG app icons in `public/` from `public/favicon.svg`. |
-| `npm test` | Runs the unit tests and the `questions.json` checks with Vitest. |
+| `npm test` | Runs the unit tests, the view render tests and the `questions.json` checks with Vitest. It starts Vitest through `scripts/run-vitest.mjs`, because on Windows Vitest 5.1 fails when the folder path starts with a lowercase drive letter (as it does in a VS Code terminal) and passes when it is uppercase. |
 | `npm run lint` | Runs ESLint. |
 | `npm run format` | Formats the code with Prettier (`npm run format:check` only checks, as CI does). |
 
@@ -172,11 +175,28 @@ Use one ID in `correctOptionIds` for a single-answer question. Use two or more I
 - Retry wrong answers from a finished attempt, or practice every question you got wrong the last time you answered it.
 - Flag questions in exam or practice mode, then practice just the flagged ones.
 - Per-question stats in the question bank (times answered, % correct), a "Weakest first" sort, and a Focus practice session with your weakest and not-yet-answered questions.
+- Topics: give questions a topic to see your score per topic on the home screen and on each result, filter the bank by topic, and practice one topic.
+- Target score: set the share of correct answers you are aiming for (75% by default, 0 turns it off). Full exams are marked as reaching or missing it, and a chart on the home screen shows your exam scores over time against it. It is your own target, not the real exam's passing score, which is often scaled.
+- Review screens can be filtered: unanswered or flagged questions before you submit an exam, wrong or flagged ones on the results.
+- Any attempt in the history can be reopened with your answers and all explanations.
+- Personal notes: write a note on any question after answering it. Notes are stored on the device, separate from the question bank, and travel with the history backup.
+- Importing a questions file shows what it contains first, then lets you add only the new questions, also update the ones that changed, or replace the whole bank. Questions are matched by their text, so files that number their questions the same way don't overwrite each other.
 - Keyboard shortcuts on desktop: `1`–`9` choose an option, `←`/`→` move, `F` flags, `Enter` submits or goes to the next question.
 - Ask AI (OpenRouter) reviews a question's answer and writes per-option explanations. Set the exam name and optional reviewer guidance in Settings so it works for any exam. The question bank can also fill all missing or placeholder explanations in one go; it only writes where the AI agrees with your answer key, never changes answers, and lists the questions where it disagreed.
-- Current session and the last 50 attempts are saved locally in `localStorage`. Export a history backup to move it to another device, and import it there; imported attempts are merged with the ones already saved.
+- The current session and your history are saved locally in `localStorage`: the newest 50 full exams and practice runs, plus the newest 50 drills (retries, mistakes, flagged, focus and topic practice), counted separately so short drills never push full sessions out. Export a history backup to move attempts and notes to another device, and import it there; imported attempts are merged with the ones already saved.
 - Each screen has its own address (`#/bank`, `#/settings`, ...), so the browser's back and forward buttons move between screens and reloading the page stays on the same screen.
 - Long questions and options are formatted for comfortable reading on mobile, with a dark theme that follows the device setting.
+
+## Host A Copy On GitHub Pages
+
+`.github/workflows/pages.yml` builds the app and publishes it to GitHub Pages, which gives an `https://` address. That should let an iPhone install the app without the certificate steps above, though this has not been tried yet. It never runs by itself:
+
+1. In the repository on GitHub, open **Settings > Pages** and set **Source** to **GitHub Actions**.
+2. Open **Actions > Deploy to GitHub Pages** and choose **Run workflow**.
+
+The published copy is public and contains only the questions committed to the repository. Never publish a `dist` folder built on your own machine if your local `questions.json` holds questions you may not share. A hosted copy keeps its own data: history, notes and question bank edits made on the local address don't appear there. To use your own questions on the hosted copy, import them in the app's question bank (they stay in that browser), and move history and notes with a history backup.
+
+The workflow sets `BASE_PATH` so the app works under `/<repository name>/`. Local builds are unaffected and still serve from `/`.
 
 ## License
 

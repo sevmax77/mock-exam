@@ -122,6 +122,29 @@ export function SettingsView({
               the app.
             </small>
           </label>
+
+          <label className="form-field">
+            <span>Target score in % (0 = no target)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={100}
+              step={1}
+              value={examSettings.targetScorePercent}
+              onChange={(event) =>
+                onExamSettingsChange({
+                  ...examSettings,
+                  targetScorePercent: Math.min(100, toWholeNumber(event.target.value)),
+                })
+              }
+            />
+            <small className="field-hint">
+              Full exams are marked as reaching or missing this share of correct answers, and the
+              score chart shows it as a line. It is your own target: real exams often use a scaled
+              passing score, which is not the same as a percentage of questions.
+            </small>
+          </label>
         </div>
 
         <div className="settings-section">

@@ -4,6 +4,7 @@ export const QUESTION_BANK_KEY = 'mock-exam.question-bank.v3';
 export const LEGACY_QUESTION_BANK_KEY = 'mock-exam.question-bank.formatted-v2';
 export const EXAM_SETTINGS_KEY = 'mock-exam.exam-settings';
 export const AI_SETTINGS_KEY = 'mock-exam.ai-settings';
+export const NOTES_KEY = 'mock-exam.notes';
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {

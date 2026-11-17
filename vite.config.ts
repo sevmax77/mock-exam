@@ -49,6 +49,12 @@ function appChunkSizeWarningPlugin(): Plugin {
   };
 }
 
+/**
+ * The path the app is served from. "/" for the local server; a hosted copy under a sub-path (such
+ * as GitHub Pages at /mock-exam/) sets BASE_PATH when building.
+ */
+const base = process.env.BASE_PATH || '/';
+
 const previewHttps =
   fs.existsSync(keyPath) && fs.existsSync(certPath)
     ? {
@@ -58,6 +64,7 @@ const previewHttps =
     : undefined;
 
 export default defineConfig({
+  base,
   build: {
     // Replaced by appChunkSizeWarningPlugin, which skips the questions chunk.
     chunkSizeWarningLimit: Number.POSITIVE_INFINITY,
@@ -91,19 +98,20 @@ export default defineConfig({
         name: 'Mock Exam',
         short_name: 'Mock Exam',
         description: 'Personal local mock exam practice app',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f3f6fb',
         theme_color: '#14213d',
-        // PNGs generated from public/favicon.svg by `npm run generate:icons`.
+        // PNGs generated from public/favicon.svg by `npm run generate:icons`. The paths are
+        // relative to the manifest, so they also work under a sub-path.
         icons: [
-          { src: '/pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: '/maskable-icon-512x512.png',
+            src: 'maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -112,7 +120,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,json,webmanifest}'],
-        navigateFallback: '/index.html',
+        navigateFallback: `${base}index.html`,
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [

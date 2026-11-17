@@ -3,6 +3,7 @@ import type { Question, QuestionOption, SavedExamState } from '../types';
 import { displayLabel } from '../lib/format';
 import { displayAnswer, sameAnswer } from '../lib/scoring';
 import { OptionExplanationsPanel } from './OptionExplanationsPanel';
+import { QuestionNote } from './QuestionNote';
 import { TimerBadge } from './TimerBadge';
 
 function scrollSessionToTop(anchor?: HTMLElement | null) {
@@ -46,6 +47,9 @@ type QuestionViewProps = {
   answeredCount: number;
   submittedCount: number;
   remainingMs: number | null;
+  /** The user's note on this question; shown once a practice answer is submitted. */
+  note: string;
+  onNoteChange: (text: string) => void;
   onSelect: (optionId: string) => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -67,6 +71,8 @@ export function QuestionView({
   answeredCount,
   submittedCount,
   remainingMs,
+  note,
+  onNoteChange,
   onSelect,
   onNext,
   onPrevious,
@@ -180,6 +186,7 @@ export function QuestionView({
         <span>
           {session.mode === 'exam' ? `${answeredCount} answered` : `${submittedCount} submitted`}
         </span>
+        {question.topic && <span>{question.topic}</span>}
         {isFlagged && <span className="flag-label">Flagged</span>}
       </div>
 
@@ -235,6 +242,7 @@ export function QuestionView({
             Correct answer: <strong>{displayAnswer(question.correctOptionIds, optionOrder)}</strong>
           </p>
           <OptionExplanationsPanel question={question} orderedOptions={orderedOptions} />
+          <QuestionNote key={question.id} note={note} onChange={onNoteChange} />
         </div>
       )}
 

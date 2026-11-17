@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Question } from '../types';
 import { makeQuestion, memoryStorage } from '../test/fixtures';
 import {
   PLACEHOLDER_CORRECT_EXPLANATION,
   PLACEHOLDER_INCORRECT_EXPLANATION,
+  applyBankImport,
   createBundledBank,
   createNextQuestionId,
   getOrderedOptions,
   hashString,
   loadQuestionBank,
   normalizeImportedQuestion,
+  planBankImport,
   serializeQuestionBank,
   validateQuestion,
   validateQuestionBank,
@@ -223,5 +226,72 @@ describe('serializeQuestionBank', () => {
 
     const modified = { ...bank, modified: true };
     expect(serializeQuestionBank(modified)).toBe(modified);
+  });
+});
+
+describe('topic', () => {
+  it('is kept when set and left out when blank', () => {
+    expect(normalizeImportedQuestion({ ...makeQuestion('q1'), topic: ' Security ' }, 0).topic).toBe(
+      'Security',
+    );
+    expect(normalizeImportedQuestion({ ...makeQuestion('q1'), topic: '  ' }, 0)).not.toHaveProperty(
+      'topic',
+    );
+    expect(normalizeImportedQuestion(makeQuestion('q1'), 0)).not.toHaveProperty('topic');
+  });
+
+  it('does not change the fingerprint of a bank without topics', () => {
+    const raw = [makeQuestion('q1'), makeQuestion('q2')];
+    expect(createBundledBank(raw).json).toBe(JSON.stringify(raw));
+  });
+});
+
+describe('importing into an existing bank', () => {
+  const titled = (id: string, text: string, correct: string[] = ['A']): Question => ({
+    ...makeQuestion(id, correct),
+    question: text,
+  });
+  const existing = [titled('q001', 'What is S3?'), titled('q002', 'What is EC2?')];
+  // Ids collide with the bank's, as they do when a file numbers its questions by position.
+  const imported = [
+    titled('q001', 'What is S3?'),
+    titled('q002', 'What is Lambda?'),
+    // Same question as the bank's q002 (case and spacing are ignored), with another answer key.
+    titled('q003', 'what is  EC2?', ['B']),
+    titled('q009', 'What is SQS?'),
+    titled('q010', 'What is SQS?'),
+  ];
+  const plan = planBankImport(existing, imported);
+
+  it('matches questions by text, not by id', () => {
+    expect(plan.unchangedCount).toBe(1);
+    expect(plan.added.map((question) => question.question)).toEqual([
+      'What is Lambda?',
+      'What is SQS?',
+    ]);
+    expect(plan.changed.map((question) => question.question)).toEqual(['what is  EC2?']);
+  });
+
+  it('adds new questions under free ids and leaves existing ones alone', () => {
+    const merged = applyBankImport(existing, plan, 'add-new');
+    expect(merged.map((question) => [question.id, question.question])).toEqual([
+      ['q001', 'What is S3?'],
+      ['q002', 'What is EC2?'],
+      ['q003', 'What is Lambda?'],
+      ['q009', 'What is SQS?'],
+    ]);
+    expect(merged[1].correctOptionIds).toEqual(['A']);
+  });
+
+  it('updates changed questions in place, keeping their id', () => {
+    const merged = applyBankImport(existing, plan, 'add-and-update');
+    expect(merged[1]).toMatchObject({ id: 'q002', question: 'what is  EC2?' });
+    expect(merged[1].correctOptionIds).toEqual(['B']);
+    expect(merged).toHaveLength(4);
+    expect(new Set(merged.map((question) => question.id)).size).toBe(4);
+  });
+
+  it('replaces the whole bank', () => {
+    expect(applyBankImport(existing, plan, 'replace')).toBe(imported);
   });
 });

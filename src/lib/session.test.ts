@@ -84,6 +84,18 @@ describe('createSession', () => {
     expect(createSession('practice', bank, timed, now)).not.toHaveProperty('deadline');
     expect(createSession('exam', bank, inOrder, now)).not.toHaveProperty('deadline');
   });
+
+  it('marks a drill, and the attempt built from it', () => {
+    const now = new Date('2026-02-03T10:00:00Z');
+    expect(createSession('practice', bank, inOrder, now)).not.toHaveProperty('drill');
+
+    const drill = createSession('practice', bank, inOrder, now, true);
+    expect(drill.drill).toBe(true);
+    expect(buildAttempt(drill, buildQuestionMap(bank), drill.questionOrder, now)).toHaveProperty(
+      'drill',
+      true,
+    );
+  });
 });
 
 describe('normalizeExamSettings', () => {
@@ -93,8 +105,16 @@ describe('normalizeExamSettings', () => {
       shuffleOptions: true,
       questionCount: 0,
       timeLimitMinutes: 0,
+      targetScorePercent: 75,
     });
     expect(normalizeExamSettings(null)).toEqual(DEFAULT_EXAM_SETTINGS);
+  });
+
+  it('keeps a target score of 0 (off) and repairs invalid ones', () => {
+    expect(normalizeExamSettings({ targetScorePercent: 0 }).targetScorePercent).toBe(0);
+    expect(normalizeExamSettings({ targetScorePercent: 250 }).targetScorePercent).toBe(100);
+    expect(normalizeExamSettings({ targetScorePercent: -5 }).targetScorePercent).toBe(75);
+    expect(normalizeExamSettings({ targetScorePercent: 'x' } as never).targetScorePercent).toBe(75);
   });
 
   it('repairs invalid numbers', () => {
