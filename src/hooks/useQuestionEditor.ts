@@ -13,7 +13,6 @@ import {
 import type { Screen } from '../lib/routing';
 import { useAskAi } from './useAskAi';
 import { useDialog } from './useDialog';
-import { scrollPageToTop } from '../lib/motion';
 
 type QuestionEditorOptions = {
   questionBank: Question[];
@@ -45,7 +44,6 @@ export function useQuestionEditor({
     setErrors([]);
     setWarnings([]);
     navigate('question-form');
-    scrollPageToTop();
   };
 
   const close = () => {

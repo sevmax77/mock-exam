@@ -1466,3 +1466,89 @@ code {
 .danger-solid-button {
   background: #b91c1c;
 }
+
+/*
+ * Screen slides (view transitions). Going deeper slides the new screen in from the right; going
+ * back slides it in from the left. The header, and during question moves the timer and button bar,
+ * stay still. Browsers without typed view transitions simply switch screens at once.
+ */
+@keyframes slide-out-to-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slide-out-to-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slide-in-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+::view-transition-group(root) {
+  animation-duration: 250ms;
+  animation-timing-function: ease-in-out;
+}
+
+/* Taps during a slide reach the new screen underneath instead of being lost. */
+::view-transition {
+  pointer-events: none;
+}
+
+html:active-view-transition-type(forward)::view-transition-old(root) {
+  animation: 250ms ease-in-out both slide-out-to-left;
+}
+
+html:active-view-transition-type(forward)::view-transition-new(root) {
+  animation: 250ms ease-in-out both slide-in-from-right;
+}
+
+html:active-view-transition-type(backward)::view-transition-old(root) {
+  animation: 250ms ease-in-out both slide-out-to-right;
+}
+
+html:active-view-transition-type(backward)::view-transition-new(root) {
+  animation: 250ms ease-in-out both slide-in-from-left;
+}
+
+.hero {
+  view-transition-name: app-header;
+}
+
+html:active-view-transition-type(question) .question-panel .timer-badge {
+  view-transition-name: question-timer;
+}
+
+html:active-view-transition-type(question) .question-panel .sticky-actions {
+  view-transition-name: question-actions;
+}
+
+/*
+ * The named parts keep the browser's default: they glide from where they were to where they end
+ * up (so they stay put when both are the same), instead of sliding sideways with the page.
+ */
+::view-transition-group(app-header),
+::view-transition-group(question-timer),
+::view-transition-group(question-actions) {
+  animation-duration: 250ms;
+  animation-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
