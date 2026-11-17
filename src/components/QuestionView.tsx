@@ -111,7 +111,9 @@ export function QuestionView({
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
-      isTypingTarget(event.target)
+      isTypingTarget(event.target) ||
+      // An open dialog (such as "Discard this session?") gets the keys, not the question behind.
+      document.querySelector('dialog[open]')
     ) {
       return;
     }
@@ -170,16 +172,12 @@ export function QuestionView({
         </div>
       </div>
 
-      <div
-        className="progress-track"
-        role="progressbar"
+      <progress
+        className="progress-bar"
         aria-label="Session progress"
-        aria-valuemin={1}
-        aria-valuemax={totalQuestions}
-        aria-valuenow={questionNumber}
-      >
-        <span style={{ width: `${(questionNumber / totalQuestions) * 100}%` }} />
-      </div>
+        max={totalQuestions}
+        value={questionNumber}
+      />
 
       <div className="question-meta">
         <span>{isMultiAnswer ? `Choose ${question.correctOptionIds.length}` : 'Choose one'}</span>

@@ -12,6 +12,8 @@ import {
 } from '../lib/questionForm';
 import type { Screen } from '../lib/routing';
 import { useAskAi } from './useAskAi';
+import { useDialog } from './useDialog';
+import { scrollPageToTop } from '../lib/motion';
 
 type QuestionEditorOptions = {
   questionBank: Question[];
@@ -35,6 +37,7 @@ export function useQuestionEditor({
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const ai = useAskAi();
+  const dialog = useDialog();
 
   const open = (next: QuestionFormState) => {
     ai.cancel();
@@ -42,7 +45,7 @@ export function useQuestionEditor({
     setErrors([]);
     setWarnings([]);
     navigate('question-form');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollPageToTop();
   };
 
   const close = () => {
@@ -96,9 +99,10 @@ export function useQuestionEditor({
     const next = applyAiReviewToForm(form, ai.review, mode, new Date().toLocaleString());
 
     if (!next) {
-      window.alert(
-        'The answer options changed after this AI review. Ask AI again before applying.',
-      );
+      void dialog.alert({
+        title: 'Ask AI again',
+        message: 'The answer options changed after this AI review. Ask AI again before applying.',
+      });
       return;
     }
 

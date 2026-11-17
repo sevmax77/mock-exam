@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Attempt, Question } from '../types';
 import { makeQuestion } from '../test/fixtures';
 import { buildQuestionMap } from '../lib/questionBank';
 import { createSession, DEFAULT_EXAM_SETTINGS } from '../lib/session';
 import { ATTEMPTS_KEY, NOTES_KEY } from '../lib/storage';
+import { useDialog, type DialogApi } from '../hooks/useDialog';
 
 // The app under test gets a small made-up bank instead of the bundled questions.json, whose
 // size and content differ between machines.
@@ -24,6 +25,7 @@ vi.mock('../lib/bundledBank', async () => {
 const { default: App } = await import('../App');
 const { ResultsView } = await import('./ResultsView');
 const { ReviewView } = await import('./ReviewView');
+const { DialogProvider } = await import('./DialogProvider');
 
 const bank: Question[] = [makeQuestion('q1'), makeQuestion('q2'), makeQuestion('q3')];
 const questionById = buildQuestionMap(bank);
@@ -33,11 +35,6 @@ beforeEach(() => {
   localStorage.clear();
   window.history.replaceState(null, '', '#/');
   vi.stubGlobal('scrollTo', vi.fn());
-  vi.stubGlobal(
-    'confirm',
-    vi.fn(() => true),
-  );
-  vi.stubGlobal('alert', vi.fn());
   // jsdom has no media queries; the app asks whether it runs as an installed app.
   vi.stubGlobal(
     'matchMedia',
@@ -45,7 +42,28 @@ beforeEach(() => {
   );
   // jsdom has no layout, so scrolling an element into view is not implemented.
   Element.prototype.scrollIntoView = vi.fn();
+  // jsdom has <dialog> but not its modal API. This stands in for the part the app uses.
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement, value?: string) {
+    if (!this.hasAttribute('open')) {
+      return;
+    }
+    if (value !== undefined) {
+      this.returnValue = value;
+    }
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
 });
+
+const renderApp = () =>
+  render(
+    <DialogProvider>
+      <App />
+    </DialogProvider>,
+  );
 
 afterEach(cleanup);
 
@@ -148,6 +166,56 @@ describe('ResultsView', () => {
   });
 });
 
+describe('DialogProvider', () => {
+  const showProvider = () => {
+    let api: DialogApi | undefined;
+    function Grab() {
+      api = useDialog();
+      return null;
+    }
+    render(
+      <DialogProvider>
+        <Grab />
+      </DialogProvider>,
+    );
+    return api!;
+  };
+
+  it('resolves true only for the confirm button, and focuses the safe choice first', async () => {
+    const dialog = showProvider();
+    let answer: Promise<boolean> = Promise.resolve(true);
+
+    act(() => {
+      answer = dialog.confirm({ title: 'Delete it?', confirmLabel: 'Delete', destructive: true });
+    });
+    expect(screen.getByRole('dialog', { name: 'Delete it?' })).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe('Cancel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await expect(answer).resolves.toBe(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => {
+      answer = dialog.confirm({ title: 'Delete it?', confirmLabel: 'Delete' });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await expect(answer).resolves.toBe(true);
+  });
+
+  it('cancels an open request when a newer one arrives', async () => {
+    const dialog = showProvider();
+    let first: Promise<boolean> = Promise.resolve(true);
+
+    act(() => {
+      first = dialog.confirm({ title: 'First?', confirmLabel: 'Yes' });
+      void dialog.alert({ title: 'Second' });
+    });
+
+    await expect(first).resolves.toBe(false);
+    expect(screen.getByRole('dialog', { name: 'Second' })).toBeTruthy();
+  });
+});
+
 describe('App', () => {
   const stored = <T,>(key: string): T => JSON.parse(localStorage.getItem(key) ?? 'null') as T;
   const answerCurrentQuestion = () => {
@@ -156,7 +224,7 @@ describe('App', () => {
   };
 
   it('runs a topic drill, saves it as a drill with a note, and reopens it from the history', async () => {
-    render(<App />);
+    renderApp();
     expect(screen.getByText('questions loaded').previousSibling?.textContent).toBe('3');
 
     const securityRow = screen.getByRole('row', { name: /Security/ });
@@ -181,8 +249,30 @@ describe('App', () => {
     expect((screen.getByLabelText('My note') as HTMLTextAreaElement).value).toBe('remember this');
   });
 
+  it('asks before discarding a session, and keeps it when the user says so', async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: /Practice mode/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Discard this session?' });
+    // The question's keyboard shortcuts must not act behind the open dialog.
+    fireEvent.keyDown(window, { key: '1' });
+    fireEvent.keyDown(window, { key: 'f' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep going' }));
+    expect(await screen.findByRole('heading', { name: /^Question 1 of/ })).toBeTruthy();
+    expect(screen.getAllByRole('radio').some((radio) => (radio as HTMLInputElement).checked)).toBe(
+      false,
+    );
+    expect(screen.queryByText('Flagged')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard session' }));
+    expect(await screen.findByRole('button', { name: /Practice mode/, hidden: true })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('marks a full exam against the target score', () => {
-    render(<App />);
+    renderApp();
     fireEvent.click(screen.getByRole('button', { name: /Exam mode/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Review & submit' }));
     fireEvent.click(screen.getByRole('button', { name: 'Submit final answers' }));

@@ -61,18 +61,12 @@ export function BatchAskAiPanel({
 
       {batch && (
         <>
-          <div
-            className="progress-track"
-            role="progressbar"
+          <progress
+            className="progress-bar"
             aria-label="Batch Ask AI progress"
-            aria-valuemin={0}
-            aria-valuemax={batch.total}
-            aria-valuenow={outcomes.length}
-          >
-            <span
-              style={{ width: `${batch.total ? (outcomes.length / batch.total) * 100 : 0}%` }}
-            />
-          </div>
+            max={Math.max(batch.total, 1)}
+            value={outcomes.length}
+          />
 
           <p className="ai-meta">
             Filled {agreed} · AI disagreed on {disagreed.length} · failed {failed.length}

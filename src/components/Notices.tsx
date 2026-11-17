@@ -1,3 +1,4 @@
+import { useDialog } from '../hooks/useDialog';
 import { isStandaloneApp, type OfflineInstallStatus } from '../hooks/useOfflineStatus';
 
 export function StorageErrorNotice({ onDismiss }: { onDismiss: () => void }) {
@@ -33,6 +34,8 @@ export function BundledUpdateNotice({
   onUseBundled,
   onKeepLocal,
 }: BundledUpdateNoticeProps) {
+  const dialog = useDialog();
+
   return (
     <section className="panel notice-panel notice-panel-info">
       <div>
@@ -49,8 +52,15 @@ export function BundledUpdateNotice({
         </button>
         <button
           className="primary-button"
-          onClick={() => {
-            if (window.confirm('Replace your edited question bank with the new questions.json?')) {
+          onClick={async () => {
+            if (
+              await dialog.confirm({
+                title: 'Use the new questions?',
+                message: 'Your edited question bank is replaced by the new questions.json.',
+                confirmLabel: 'Replace my bank',
+                destructive: true,
+              })
+            ) {
               onUseBundled();
             }
           }}
