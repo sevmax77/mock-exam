@@ -13,6 +13,8 @@ import { useBatchAskAi } from './hooks/useBatchAskAi';
 import { useScreenHistory } from './hooks/useScreenHistory';
 import type { Screen } from './lib/routing';
 import { useCountdown } from './hooks/useCountdown';
+import { useDialog } from './hooks/useDialog';
+import { useLatest } from './hooks/useLatest';
 import { useOfflineStatus } from './hooks/useOfflineStatus';
 import { useQuestionEditor } from './hooks/useQuestionEditor';
 import { usePersistentState } from './hooks/usePersistentState';
@@ -21,6 +23,7 @@ import { DEFAULT_AI_MODEL, normalizeAiSettings, type AiReview, type AiSettings }
 import { fillExplanationsFromReview, needsExplanations } from './lib/batchAi';
 import { BUNDLED_BANK } from './lib/bundledBank';
 import { downloadJson } from './lib/download';
+import { scrollPageToTop } from './lib/motion';
 import { mergeNotes, normalizeNotes, setNote, type Notes } from './lib/notes';
 import {
   buildQuestionMap,
@@ -111,10 +114,13 @@ function App() {
   );
 
   const questionBank = storedBank.questions;
+  const currentBankRef = useLatest(questionBank);
   const bundledUpdateAvailable =
     storedBank.modified && storedBank.bundledHash !== BUNDLED_BANK.hash;
   const questionById = useMemo(() => buildQuestionMap(questionBank), [questionBank]);
   const [session, dispatchSession] = useSession(questionById, reportStorageError);
+  const dialog = useDialog();
+  const currentSessionRef = useLatest(session);
 
   /** The attempt on the results screen: the one just finished, or one opened from history. */
   const [latestAttempt, setLatestAttempt] = useState<Attempt | null>(null);
@@ -175,18 +181,30 @@ function App() {
    * Starts a session over the whole bank (sized by the settings), or over `questionIds` only, for
    * example to retry wrong answers. A session over chosen questions is never sampled or timed.
    */
-  const startSession = (mode: SessionMode, questionIds?: string[]) => {
+  const startSession = async (mode: SessionMode, questionIds?: string[]) => {
     const chosen = questionIds ? new Set(questionIds) : null;
     const questions = chosen
       ? questionBank.filter((question) => chosen.has(question.id))
       : questionBank;
 
     if (!questions.length) {
-      window.alert('Add at least one question before starting a session.');
+      await dialog.alert({
+        title: 'No questions to use',
+        message: 'Add at least one question before starting a session.',
+      });
       return;
     }
 
-    if (session && !window.confirm('Start a new session and discard the current one?')) {
+    if (
+      session &&
+      !(await dialog.confirm({
+        title: 'Start a new session?',
+        message: 'The session in progress will be discarded.',
+        confirmLabel: 'Discard and start',
+        cancelLabel: 'Keep current',
+        destructive: true,
+      }))
+    ) {
       return;
     }
 
@@ -201,10 +219,10 @@ function App() {
     // From results, replace that entry: its attempt is cleared, so going back to it would only
     // show home.
     navigate('session', { replace: screen === 'results' });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollPageToTop();
   };
 
-  const endSession = ({ timedOut = false } = {}) => {
+  const endSession = async ({ timedOut = false } = {}) => {
     if (!session) {
       return;
     }
@@ -214,16 +232,23 @@ function App() {
 
     if (session.mode === 'practice' && !timedOut) {
       if (!scoredIds.length) {
-        window.alert('Submit at least one answer before finishing.');
+        await dialog.alert({
+          title: 'Nothing to score yet',
+          message: 'Submit at least one answer before finishing.',
+        });
         return;
       }
 
       if (
         scoredIds.length < session.questionOrder.length &&
-        !window.confirm(
-          `You have submitted ${scoredIds.length} of ${session.questionOrder.length} questions. ` +
-            'Finish now and score only the submitted ones?',
-        )
+        !(await dialog.confirm({
+          title: 'Finish practice now?',
+          message:
+            `You have submitted ${scoredIds.length} of ${session.questionOrder.length} ` +
+            'questions. Only the submitted ones will be scored.',
+          confirmLabel: 'Finish now',
+          cancelLabel: 'Keep practising',
+        }))
       ) {
         return;
       }
@@ -239,7 +264,7 @@ function App() {
     // Results take the place of the finished session in the browser history.
     if (!timedOut || ['home', 'session', 'review', 'results'].includes(screen)) {
       navigate('results', { replace: true });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollPageToTop();
     }
   };
 
@@ -256,8 +281,15 @@ function App() {
     closeReview();
   };
 
-  const clearHistory = () => {
-    if (window.confirm('Clear saved attempt history?')) {
+  const clearHistory = async () => {
+    if (
+      await dialog.confirm({
+        title: 'Clear attempt history?',
+        message: 'Every saved attempt is deleted. Export the history first to keep a copy.',
+        confirmLabel: 'Clear history',
+        destructive: true,
+      })
+    ) {
       setAttempts([]);
     }
   };
@@ -271,7 +303,7 @@ function App() {
   const viewAttempt = (attempt: Attempt) => {
     setLatestAttempt(attempt);
     navigate('results');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollPageToTop();
   };
 
   const practiceTopic = (topic: string) =>
@@ -299,20 +331,34 @@ function App() {
 
       setAttempts(merged.attempts);
       setNotes(mergedNotes.notes);
-      window.alert(messages.join(' '));
+      await dialog.alert({ title: 'History imported', message: messages.join(' ') });
     } catch (error) {
-      window.alert(
-        error instanceof SyntaxError
-          ? 'The selected file is not valid JSON.'
-          : error instanceof Error
-            ? error.message
-            : 'Could not import the selected file.',
-      );
+      await dialog.alert({
+        title: 'Could not import history',
+        message:
+          error instanceof SyntaxError
+            ? 'The selected file is not valid JSON.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not import the selected file.',
+      });
     }
   };
 
-  const resetCurrentSession = () => {
-    if (window.confirm('Discard the current session?')) {
+  const resetCurrentSession = async () => {
+    const startedAt = session?.startedAt;
+
+    if (
+      (await dialog.confirm({
+        title: 'Discard this session?',
+        message: 'Your answers so far are not saved to the history.',
+        confirmLabel: 'Discard session',
+        cancelLabel: 'Keep going',
+        destructive: true,
+      })) &&
+      // If the exam timed out meanwhile, it is already saved and its results are showing.
+      currentSessionRef.current?.startedAt === startedAt
+    ) {
       dispatchSession({ type: 'clear' });
       setLatestAttempt(null);
       goBack('home');
@@ -357,23 +403,36 @@ function App() {
     saveQuestionBank([...questionBank, nextQuestion]);
   };
 
-  const deleteQuestion = (questionId: string) => {
-    if (!window.confirm('Delete this question?')) {
+  const deleteQuestion = async (questionId: string) => {
+    if (
+      !(await dialog.confirm({
+        title: 'Delete this question?',
+        message: 'It is removed from the question bank on this device.',
+        confirmLabel: 'Delete question',
+        destructive: true,
+      }))
+    ) {
       return;
     }
 
-    saveQuestionBank(questionBank.filter((question) => question.id !== questionId));
+    // The latest bank, not the one from before the dialog: Batch Ask AI may have filled in
+    // explanations meanwhile.
+    saveQuestionBank(currentBankRef.current.filter((question) => question.id !== questionId));
     if (screen === 'question-form' && editor.form.id === questionId) {
       editor.close();
     }
   };
 
-  const resetQuestionBank = () => {
+  const resetQuestionBank = async () => {
     if (
-      !window.confirm(
-        'Reset the question bank to the bundled questions.json? Your local edits will be lost. ' +
+      !(await dialog.confirm({
+        title: 'Reset the question bank?',
+        message:
+          'The bank goes back to the bundled questions.json and your local edits are lost. ' +
           'Export first if you want to keep them.',
-      )
+        confirmLabel: 'Reset bank',
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -404,20 +463,27 @@ function App() {
     });
   };
 
-  const startBatchAskAi = () => {
+  const startBatchAskAi = async () => {
     if (!aiSettings.apiKey.trim()) {
-      window.alert('Add your OpenRouter API key in Settings first.');
+      await dialog.alert({
+        title: 'API key needed',
+        message: 'Add your OpenRouter API key in Settings first.',
+        okLabel: 'Open Settings',
+      });
       openSettings('bank');
       return;
     }
 
     const count = pendingExplanationQuestions.length;
     if (
-      !window.confirm(
-        `Send ${count} ${count === 1 ? 'question' : 'questions'} to OpenRouter ` +
-          `(${aiSettings.model.trim() || DEFAULT_AI_MODEL}), one at a time? Each request uses ` +
-          'your API key. Explanations are filled in only where the AI agrees with your answer key.',
-      )
+      !(await dialog.confirm({
+        title: `Ask AI about ${count} ${count === 1 ? 'question' : 'questions'}?`,
+        message:
+          `They are sent to OpenRouter (${aiSettings.model.trim() || DEFAULT_AI_MODEL}) one at a ` +
+          'time, and each request uses your API key. Explanations are filled in only where the ' +
+          'AI agrees with your answer key.',
+        confirmLabel: 'Send to OpenRouter',
+      }))
     ) {
       return;
     }

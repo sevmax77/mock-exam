@@ -120,7 +120,24 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  /* Dynamic units follow Safari's toolbar as it shows and hides. */
+  min-height: 100dvh;
+}
+
+/* The question form keeps its Save bar stuck to the bottom; focused fields scroll clear of it. */
+html:has(.sticky-actions) {
+  scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
 }
 
 button,
@@ -204,7 +221,7 @@ code {
 }
 
 .hero h1 {
-  font-size: clamp(2rem, 5vw, 4rem);
+  font-size: clamp(2rem, 1rem + 3.5vw, 4rem);
   line-height: 1;
 }
 
@@ -327,7 +344,10 @@ code {
 }
 
 .mode-card:hover {
-  transform: translateY(-2px);
+  /* Only lifts when the device allows motion; the border and shadow still change. */
+  @media (prefers-reduced-motion: no-preference) {
+    transform: translateY(-2px);
+  }
   border-color: var(--hover-border);
   box-shadow: 0 16px 42px rgba(37, 68, 111, 0.14);
 }
@@ -361,19 +381,35 @@ code {
   margin-bottom: 18px;
 }
 
-.progress-track {
+/* A native <progress>, fully restyled: the track is the element, the fill a pseudo-element. */
+.progress-bar {
+  display: block;
+  width: 100%;
   height: 10px;
-  overflow: hidden;
+  appearance: none;
+  border: 0 solid;
   border-radius: 999px;
+  overflow: clip;
   background: var(--track);
 }
 
-.progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
+.progress-bar::-webkit-progress-bar {
+  background: transparent;
+}
+
+/* Kept apart from the Firefox rule below: one selector list with both would be dropped. */
+.progress-bar::-webkit-progress-value {
+  border-radius: 999px;
   background: linear-gradient(90deg, #3b82f6, #14b8a6);
-  transition: width 180ms ease;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: inline-size 180ms ease;
+  }
+}
+
+.progress-bar::-moz-progress-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6, #14b8a6);
 }
 
 .question-meta {
@@ -401,7 +437,7 @@ code {
 .question-text {
   margin: 0 0 22px;
   color: var(--text-strong);
-  font-size: clamp(1.08rem, 2.4vw, 1.28rem);
+  font-size: clamp(1.08rem, 0.9rem + 0.8vw, 1.28rem);
   font-weight: 650;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -1366,4 +1402,67 @@ code {
 .trend-point:hover .trend-tip,
 .trend-point:focus-visible .trend-tip {
   display: block;
+}
+
+/* Results can list well over a hundred cards. The browser skips laying out and painting the ones
+   far off screen; the first two are left alone as they may be in view when the page opens. */
+.results-list .result-card:nth-child(n + 3) {
+  content-visibility: auto;
+  /* Height only: an intrinsic width would widen the grid column past a phone screen. A full
+     card with every explanation is tall; once shown, its real height is remembered. */
+  contain-intrinsic-size: auto none auto 2400px;
+}
+
+/* In-app confirm and alert dialogs (native <dialog> opened with showModal). */
+.app-dialog {
+  width: min(28rem, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 24px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 60px rgb(15 23 42 / 0.28);
+}
+
+/* Without both rules, scrolling inside the dialog or over the backdrop scrolls the page. */
+.app-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+.app-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgb(11 18 32 / 0.55);
+}
+
+.app-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  color: var(--text-strong);
+}
+
+.app-dialog p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+@media (max-width: 720px) {
+  .dialog-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* Fixed like the primary blue: white text keeps over 6:1 contrast in light and dark mode. */
+.danger-solid-button {
+  background: #b91c1c;
 }
