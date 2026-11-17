@@ -548,19 +548,28 @@ code {
   padding: 16px;
 }
 
+/* Neutral box so the green and red option cards inside it read on their own; the border and
+   heading carry the verdict. */
 .feedback {
   margin-top: 18px;
-  border: 1px solid;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
 }
 
 .correct-feedback {
   border-color: var(--correct-border-soft);
-  background: var(--correct-bg);
+}
+
+.correct-feedback > h3 {
+  color: var(--success-text);
 }
 
 .wrong-feedback {
   border-color: var(--wrong-border-soft);
-  background: var(--wrong-bg);
+}
+
+.wrong-feedback > h3 {
+  color: var(--danger-text);
 }
 
 .explanation {
@@ -856,8 +865,8 @@ code {
 }
 
 .option-explanation-card.incorrect-option {
-  border-color: var(--border-subtle);
-  background: var(--surface-faint);
+  border-color: var(--wrong-border-soft);
+  background: var(--wrong-bg);
 }
 
 .option-explanation-heading {
@@ -875,8 +884,10 @@ code {
 }
 
 .question-summary {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 14px;
+  border: 1px solid var(--info-border);
+  border-radius: 18px;
+  background: var(--info-bg);
+  padding: 16px;
 }
 
 .settings-section {
