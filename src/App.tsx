@@ -23,7 +23,7 @@ import { DEFAULT_AI_MODEL, normalizeAiSettings, type AiReview, type AiSettings }
 import { fillExplanationsFromReview, needsExplanations } from './lib/batchAi';
 import { BUNDLED_BANK } from './lib/bundledBank';
 import { downloadJson } from './lib/download';
-import { scrollPageToTop } from './lib/motion';
+import { slide } from './lib/motion';
 import { mergeNotes, normalizeNotes, setNote, type Notes } from './lib/notes';
 import {
   buildQuestionMap,
@@ -211,15 +211,14 @@ function App() {
     const settings = chosen
       ? { ...examSettings, questionCount: 0, timeLimitMinutes: 0 }
       : examSettings;
-    dispatchSession({
-      type: 'start',
-      session: createSession(mode, questions, settings, new Date(), Boolean(chosen)),
+    const nextSession = createSession(mode, questions, settings, new Date(), Boolean(chosen));
+    slide('forward', () => {
+      dispatchSession({ type: 'start', session: nextSession });
+      setLatestAttempt(null);
+      // From results, replace that entry: its attempt is cleared, so going back to it would only
+      // show home.
+      navigate('session', { replace: screen === 'results' });
     });
-    setLatestAttempt(null);
-    // From results, replace that entry: its attempt is cleared, so going back to it would only
-    // show home.
-    navigate('session', { replace: screen === 'results' });
-    scrollPageToTop();
   };
 
   const endSession = async ({ timedOut = false } = {}) => {
@@ -255,31 +254,49 @@ function App() {
     }
 
     const attempt = buildAttempt(session, questionById, scoredIds, new Date(), timedOut);
-    setAttempts((current) => addAttempt(current, attempt));
-    setLatestAttempt(attempt);
-    dispatchSession({ type: 'clear' });
+    const finish = () => {
+      setAttempts((current) => addAttempt(current, attempt));
+      setLatestAttempt(attempt);
+      dispatchSession({ type: 'clear' });
+    };
 
     // A timed exam can run out while the user is editing questions or settings; don't pull
     // them away from that. The attempt is still saved to history.
-    // Results take the place of the finished session in the browser history.
-    if (!timedOut || ['home', 'session', 'review', 'results'].includes(screen)) {
-      navigate('results', { replace: true });
-      scrollPageToTop();
+    if (timedOut && !['home', 'session', 'review', 'results'].includes(screen)) {
+      finish();
+      return;
     }
+
+    slide('forward', () => {
+      finish();
+      // Results take the place of the finished session in the browser history.
+      navigate('results', { replace: true });
+    });
   };
 
   // Review is part of the session: both share one history entry, so the browser's back button
   // leaves the session from either.
   const openReview = () => navigate('review', { replace: true });
-  const closeReview = () => navigate('session', { replace: true });
+  const closeReview = () => navigate('session', { replace: true, direction: 'backward' });
 
   const remainingMs = useCountdown(session?.deadline, () => endSession({ timedOut: true }));
 
-  const goToQuestion = (index: number) => {
-    // QuestionView scrolls itself to the top whenever the shown question changes.
-    dispatchSession({ type: 'goTo', index });
-    closeReview();
-  };
+  const goToQuestion = (index: number) =>
+    slide('backward', () => {
+      // QuestionView scrolls itself to the top whenever the shown question changes.
+      dispatchSession({ type: 'goTo', index });
+      closeReview();
+    });
+
+  /** Moves to the next or previous question, sliding only the question itself. */
+  const moveQuestion = (direction: 1 | -1) =>
+    slide(
+      direction === 1 ? 'forward' : 'backward',
+      () => dispatchSession({ type: 'move', direction }),
+      {
+        question: true,
+      },
+    );
 
   const clearHistory = async () => {
     if (
@@ -300,11 +317,11 @@ function App() {
   };
 
   /** Opens the full results of an attempt from the history. */
-  const viewAttempt = (attempt: Attempt) => {
-    setLatestAttempt(attempt);
-    navigate('results');
-    scrollPageToTop();
-  };
+  const viewAttempt = (attempt: Attempt) =>
+    slide('forward', () => {
+      setLatestAttempt(attempt);
+      navigate('results');
+    });
 
   const practiceTopic = (topic: string) =>
     startSession(
@@ -359,9 +376,13 @@ function App() {
       // If the exam timed out meanwhile, it is already saved and its results are showing.
       currentSessionRef.current?.startedAt === startedAt
     ) {
-      dispatchSession({ type: 'clear' });
-      setLatestAttempt(null);
-      goBack('home');
+      slide('backward', () => {
+        dispatchSession({ type: 'clear' });
+        setLatestAttempt(null);
+        goBack('home');
+        // Home shows right away (no session to show); the browser's back step comes later.
+        window.scrollTo(0, 0);
+      });
     }
   };
 
@@ -572,8 +593,8 @@ function App() {
           onSelect={(optionId) =>
             dispatchSession({ type: 'select', question: currentQuestion, optionId })
           }
-          onNext={() => dispatchSession({ type: 'move', direction: 1 })}
-          onPrevious={() => dispatchSession({ type: 'move', direction: -1 })}
+          onNext={() => moveQuestion(1)}
+          onPrevious={() => moveQuestion(-1)}
           onToggleFlag={() =>
             dispatchSession({ type: 'toggleFlag', questionId: currentQuestion.id })
           }
